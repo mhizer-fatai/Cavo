@@ -1,12 +1,12 @@
--- Cavopay full database schema.
+-- Cavo full database schema.
 -- This file is the Supabase SQL editor entrypoint.
 -- The same schema is split into smaller files under backend/db for maintainability.
 
 -- 00_reset.sql
-DROP TABLE IF EXISTS public.cavopay_security_events CASCADE;
+DROP TABLE IF EXISTS public.cavo_security_events CASCADE;
 DROP TABLE IF EXISTS public.swaps CASCADE;
-DROP TABLE IF EXISTS public.cavopay_pin_approvals CASCADE;
-DROP TABLE IF EXISTS public.cavopay_pins CASCADE;
+DROP TABLE IF EXISTS public.cavo_pin_approvals CASCADE;
+DROP TABLE IF EXISTS public.cavo_pins CASCADE;
 DROP TABLE IF EXISTS public.email_login_codes CASCADE;
 DROP TABLE IF EXISTS public.shield_events CASCADE;
 DROP TABLE IF EXISTS public.payments CASCADE;
@@ -107,7 +107,7 @@ CREATE TABLE public.payments (
 );
 
 -- 05_payment_pin_security.sql
-CREATE TABLE public.cavopay_pins (
+CREATE TABLE public.cavo_pins (
   user_key TEXT PRIMARY KEY,
   pin_hash TEXT NOT NULL,
   salt TEXT NOT NULL,
@@ -122,14 +122,14 @@ CREATE TABLE public.cavopay_pins (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-DROP TRIGGER IF EXISTS cavopay_pins_set_updated_at ON public.cavopay_pins;
+DROP TRIGGER IF EXISTS cavo_pins_set_updated_at ON public.cavo_pins;
 
-CREATE TRIGGER cavopay_pins_set_updated_at
-BEFORE UPDATE ON public.cavopay_pins
+CREATE TRIGGER cavo_pins_set_updated_at
+BEFORE UPDATE ON public.cavo_pins
 FOR EACH ROW
 EXECUTE FUNCTION public.set_updated_at();
 
-CREATE TABLE public.cavopay_pin_approvals (
+CREATE TABLE public.cavo_pin_approvals (
   id UUID PRIMARY KEY,
   user_key TEXT NOT NULL,
   wallet_address TEXT NOT NULL,
@@ -143,7 +143,7 @@ CREATE TABLE public.cavopay_pin_approvals (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE public.cavopay_security_events (
+CREATE TABLE public.cavo_security_events (
   id UUID PRIMARY KEY,
   event_type TEXT NOT NULL,
   user_key TEXT,
@@ -187,7 +187,7 @@ CREATE INDEX idx_profiles_account_id
 CREATE INDEX idx_profiles_owner_wallet
   ON public.profiles (owner_address);
 
-CREATE INDEX idx_profiles_cavopay_wallet
+CREATE INDEX idx_profiles_cavo_wallet
   ON public.profiles (wallet_address);
 
 CREATE INDEX idx_payment_links_creator
@@ -211,17 +211,17 @@ CREATE INDEX idx_payments_source_chain
 CREATE INDEX idx_payments_link
   ON public.payments (link_id);
 
-CREATE INDEX idx_cavopay_pin_approvals_user_key
-  ON public.cavopay_pin_approvals (user_key);
+CREATE INDEX idx_cavo_pin_approvals_user_key
+  ON public.cavo_pin_approvals (user_key);
 
-CREATE INDEX idx_cavopay_pin_approvals_expires_at
-  ON public.cavopay_pin_approvals (expires_at);
+CREATE INDEX idx_cavo_pin_approvals_expires_at
+  ON public.cavo_pin_approvals (expires_at);
 
-CREATE INDEX idx_cavopay_security_events_user_key
-  ON public.cavopay_security_events (user_key);
+CREATE INDEX idx_cavo_security_events_user_key
+  ON public.cavo_security_events (user_key);
 
-CREATE INDEX idx_cavopay_security_events_created_at
-  ON public.cavopay_security_events (created_at);
+CREATE INDEX idx_cavo_security_events_created_at
+  ON public.cavo_security_events (created_at);
 
 CREATE INDEX idx_email_login_codes_email
   ON public.email_login_codes (email);
@@ -235,13 +235,13 @@ ALTER TABLE public.user_wallets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.payment_links ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.payments ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.cavopay_pins ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.cavopay_pin_approvals ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.cavopay_security_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.cavo_pins ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.cavo_pin_approvals ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.cavo_security_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.email_login_codes ENABLE ROW LEVEL SECURITY;
 
 -- No public RLS policies are created here on purpose.
--- Cavopay reads and writes these tables through the backend using SUPABASE_SERVICE_ROLE_KEY.
+-- Cavo reads and writes these tables through the backend using SUPABASE_SERVICE_ROLE_KEY.
 -- Browser clients with the anon key should not directly access wallet, PIN, approval, OTP, or ledger data.
 
 -- 09_swaps.sql

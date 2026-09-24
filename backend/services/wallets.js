@@ -32,7 +32,7 @@ async function createWalletForUser(userId) {
 
   // Create a wallet set for this user
   const walletSetRes = await client.createWalletSet({
-    name: `Cavopay-${userId}`,
+    name: `Cavo-${userId}`,
   });
 
   const walletSetId = walletSetRes.data?.walletSet?.id;

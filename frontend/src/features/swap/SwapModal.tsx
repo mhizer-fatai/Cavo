@@ -1,6 +1,6 @@
 import { ArrowDownUp, X } from 'lucide-react'
 import PinDotsInput from '../../components/PinDotsInput'
-import { CAVOPAY_SECURITY_QUESTIONS } from '../../lib/config'
+import { CAVO_SECURITY_QUESTIONS } from '../../lib/config'
 import type { SwapQuote } from '../../lib/api'
 
 export type SwapToken = 'USDC' | 'EURC'
@@ -15,15 +15,15 @@ type SwapModalProps = {
   quoteError: string | null
   swapError: string | null
   isSwapping: boolean
-  cavopayPin: string
+  cavoPin: string
   confirmPin: string
   securityAnswerOne: string
   securityAnswerTwo: string
-  hasCavopayPin: boolean | null
+  hasCavoPin: boolean | null
   walletAddress: string
   onAmountChange: (value: string) => void
   onTokenInChange: (value: SwapToken) => void
-  onCavopayPinChange: (value: string) => void
+  onCavoPinChange: (value: string) => void
   onConfirmPinChange: (value: string) => void
   onSecurityAnswerOneChange: (value: string) => void
   onSecurityAnswerTwoChange: (value: string) => void
@@ -66,15 +66,15 @@ export default function SwapModal({
   quoteError,
   swapError,
   isSwapping,
-  cavopayPin,
+  cavoPin,
   confirmPin,
   securityAnswerOne,
   securityAnswerTwo,
-  hasCavopayPin,
+  hasCavoPin,
   walletAddress,
   onAmountChange,
   onTokenInChange,
-  onCavopayPinChange,
+  onCavoPinChange,
   onConfirmPinChange,
   onSecurityAnswerOneChange,
   onSecurityAnswerTwoChange,
@@ -85,17 +85,17 @@ export default function SwapModal({
   shortenAddress,
 }: SwapModalProps) {
   const tokenOut: SwapToken = swapTokenIn === 'USDC' ? 'EURC' : 'USDC'
-  const isCreatingPin = !hasCavopayPin
+  const isCreatingPin = !hasCavoPin
   const amountNumber = Number(swapAmount)
   const canReview = Number.isFinite(amountNumber) && amountNumber > 0 && !!walletAddress
-  const canSubmitPin = cavopayPin.length === 4 && (
-    hasCavopayPin || (confirmPin.length === 4 && securityAnswerOne.trim() && securityAnswerTwo.trim())
+  const canSubmitPin = cavoPin.length === 4 && (
+    hasCavoPin || (confirmPin.length === 4 && securityAnswerOne.trim() && securityAnswerTwo.trim())
   )
   const title = swapStep === 'details'
     ? 'Swap Stablecoins'
     : swapStep === 'processing'
       ? 'Swap Submitted'
-      : hasCavopayPin ? 'Enter Payment PIN' : 'Create Payment PIN'
+      : hasCavoPin ? 'Enter Payment PIN' : 'Create Payment PIN'
 
   return (
     <div className="wc-modal" onClick={onClose}>
@@ -108,11 +108,11 @@ export default function SwapModal({
         </div>
         <div className="wc-sub">
           {swapStep === 'details'
-            ? 'Convert between USDC and EURC instantly inside your Cavopay wallet.'
+            ? 'Convert between USDC and EURC instantly inside your Cavo wallet.'
             : swapStep === 'processing'
               ? 'Your swap is on its way. The receipt will appear after network confirmation.'
-              : hasCavopayPin
-                ? 'Approve this exact swap. Your PIN is verified securely by Cavopay.'
+              : hasCavoPin
+                ? 'Approve this exact swap. Your PIN is verified securely by Cavo.'
                 : 'Create a 4-digit Payment PIN. You will use it to approve everyday actions.'}
         </div>
 
@@ -223,9 +223,9 @@ export default function SwapModal({
             ) : (
               <>
                 <PinDotsInput
-                  label={hasCavopayPin ? 'Payment PIN' : 'New Payment PIN'}
-                  value={cavopayPin}
-                  onChange={onCavopayPinChange}
+                  label={hasCavoPin ? 'Payment PIN' : 'New Payment PIN'}
+                  value={cavoPin}
+                  onChange={onCavoPinChange}
                   disabled={isSwapping}
                 />
 
@@ -238,7 +238,7 @@ export default function SwapModal({
                       disabled={isSwapping}
                     />
                     <div className="form-group">
-                      <label className="form-label">{CAVOPAY_SECURITY_QUESTIONS[0]}</label>
+                      <label className="form-label">{CAVO_SECURITY_QUESTIONS[0]}</label>
                       <input
                         className="form-input"
                         placeholder="Your answer"
@@ -248,7 +248,7 @@ export default function SwapModal({
                       />
                     </div>
                     <div className="form-group">
-                      <label className="form-label">{CAVOPAY_SECURITY_QUESTIONS[1]}</label>
+                      <label className="form-label">{CAVO_SECURITY_QUESTIONS[1]}</label>
                       <input
                         className="form-input"
                         placeholder="Answer"
@@ -267,7 +267,7 @@ export default function SwapModal({
                   disabled={isSwapping || !canSubmitPin}
                   className="btn btn-primary btn-full send-submit-btn"
                 >
-                  {isSwapping ? 'Swapping...' : hasCavopayPin ? 'Approve and Swap' : 'Create PIN and Swap'}
+                  {isSwapping ? 'Swapping...' : hasCavoPin ? 'Approve and Swap' : 'Create PIN and Swap'}
                 </button>
                 <button onClick={onBackToDetails} disabled={isSwapping} className="btn btn-secondary btn-full">
                   Back

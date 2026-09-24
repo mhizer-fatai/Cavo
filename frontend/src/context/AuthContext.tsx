@@ -1,10 +1,10 @@
 import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { completeGoogleLoginFromRedirect } from '../lib/google'
-import { createCavopaySession, logoutCavopaySession, refreshCavopaySession, setMemorySessionToken } from '../lib/api'
+import { createCavoSession, logoutCavoSession, refreshCavoSession, setMemorySessionToken } from '../lib/api'
 import { buildGoogleUserKey, circleUserIdFromUserKey } from '../lib/identity'
 
-export type CavopayAuthUser = {
+export type CavoAuthUser = {
   authProvider: 'google' | 'email'
   providerUserId: string
   userKey: string
@@ -14,25 +14,25 @@ export type CavopayAuthUser = {
   userToken?: string
   encryptionKey?: string
   refreshToken?: string
-  cavopaySessionToken?: string
-  cavopaySessionExpiresAt?: string
+  cavoSessionToken?: string
+  cavoSessionExpiresAt?: string
 }
 
 type AuthContextValue = {
-  user: CavopayAuthUser | null
+  user: CavoAuthUser | null
   isAuthLoading: boolean
-  setUser: (user: CavopayAuthUser) => void
+  setUser: (user: CavoAuthUser) => void
   logout: () => void
 }
 
-const STORAGE_KEY = 'cavopay.authUser'
+const STORAGE_KEY = 'cavo.authUser'
 const AuthContext = createContext<AuthContextValue | null>(null)
 
 // Persist the profile WITHOUT the access token (M3: tokens live in memory
 // only). The token is mirrored into the api module's memory store.
-function persistUser(user: CavopayAuthUser) {
-  const { cavopaySessionToken: _dropped, ...rest } = user
-  setMemorySessionToken(user.cavopaySessionToken ?? null)
+function persistUser(user: CavoAuthUser) {
+  const { cavoSessionToken: _dropped, ...rest } = user
+  setMemorySessionToken(user.cavoSessionToken ?? null)
   localStorage.setItem(STORAGE_KEY, JSON.stringify(rest))
 }
 
@@ -47,11 +47,11 @@ function isGoogleCallbackUrl() {
     || window.location.hash.includes('id_token')
 }
 
-async function withCavopaySession(user: CavopayAuthUser): Promise<CavopayAuthUser> {
+async function withCavoSession(user: CavoAuthUser): Promise<CavoAuthUser> {
   // The Google credential (ID token or access token) is verified server-side
   // via Google tokeninfo. The backend-derived userKey is authoritative —
   // client-declared identity is never trusted.
-  const session = await createCavopaySession({
+  const session = await createCavoSession({
     userToken: user.userToken,
     displayName: user.displayName,
   })
@@ -60,24 +60,24 @@ async function withCavopaySession(user: CavopayAuthUser): Promise<CavopayAuthUse
     ...user,
     userKey: session.userKey,
     email: verifiedEmail || user.email,
-    cavopaySessionToken: session.token,
-    cavopaySessionExpiresAt: session.expiresAt,
+    cavoSessionToken: session.token,
+    cavoSessionExpiresAt: session.expiresAt,
   }
 }
 
-async function refreshStoredSession(user: CavopayAuthUser): Promise<CavopayAuthUser> {
+async function refreshStoredSession(user: CavoAuthUser): Promise<CavoAuthUser> {
   // Silent re-login via the HttpOnly refresh cookie — no identity proof needed
   // because the cookie itself is the proof.
-  const session = await refreshCavopaySession()
+  const session = await refreshCavoSession()
   return {
     ...user,
-    cavopaySessionToken: session.token,
-    cavopaySessionExpiresAt: session.expiresAt,
+    cavoSessionToken: session.token,
+    cavoSessionExpiresAt: session.expiresAt,
   }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUserState] = useState<CavopayAuthUser | null>(() => {
+  const [user, setUserState] = useState<CavoAuthUser | null>(() => {
     const stored = localStorage.getItem(STORAGE_KEY)
     if (!stored) return null
     try {
@@ -108,7 +108,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!providerUserId) throw new Error('Google login did not return a user id')
         const email = result?.oAuthInfo?.socialUserInfo?.email
         if (!email) throw new Error('Google login did not return an email address')
-        const nextUser = await withCavopaySession({
+        const nextUser = await withCavoSession({
           authProvider: 'google',
           providerUserId,
           userKey: buildGoogleUserKey(email),
@@ -139,30 +139,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser: (nextUser) => {
       setUserState(nextUser)
       persistUser(nextUser)
-      if (!nextUser.cavopaySessionToken) {
+      if (!nextUser.cavoSessionToken) {
         refreshStoredSession(nextUser)
           .then((sessionUser) => {
             setUserState(sessionUser)
             persistUser(sessionUser)
           })
           .catch((error) => {
-            console.error('Cavopay session refresh failed:', error)
+            console.error('Cavo session refresh failed:', error)
             setUserState(null)
             clearPersistedUser()
           })
       }
     },
     logout: () => {
-      logoutCavopaySession()
+      logoutCavoSession()
       setUserState(null)
       clearPersistedUser()
-      localStorage.removeItem('cavopay.walletAddress')
-      if (user?.userKey) localStorage.removeItem(`cavopay.walletAddress:${user.userKey}`)
+      localStorage.removeItem('cavo.walletAddress')
+      if (user?.userKey) localStorage.removeItem(`cavo.walletAddress:${user.userKey}`)
     },
   }), [isAuthLoading, user])
 
   useEffect(() => {
-    if (!user || user.cavopaySessionToken) return
+    if (!user || user.cavoSessionToken) return
     let cancelled = false
     refreshStoredSession(user)
       .then((sessionUser) => {
@@ -172,7 +172,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       })
       .catch((error) => {
         if (cancelled) return
-        console.error('Cavopay session refresh failed:', error)
+        console.error('Cavo session refresh failed:', error)
         setUserState(null)
         clearPersistedUser()
       })
@@ -183,13 +183,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const handleSessionExpired = () => {
       setUserState(null)
       clearPersistedUser()
-      localStorage.removeItem('cavopay.walletAddress')
-      if (user?.userKey) localStorage.removeItem(`cavopay.walletAddress:${user.userKey}`)
+      localStorage.removeItem('cavo.walletAddress')
+      if (user?.userKey) localStorage.removeItem(`cavo.walletAddress:${user.userKey}`)
       navigate('/dashboard', { replace: true })
     }
 
-    window.addEventListener('cavopay:session-expired', handleSessionExpired)
-    return () => window.removeEventListener('cavopay:session-expired', handleSessionExpired)
+    window.addEventListener('cavo:session-expired', handleSessionExpired)
+    return () => window.removeEventListener('cavo:session-expired', handleSessionExpired)
   }, [navigate, user?.userKey])
 
   if (isAuthLoading) {
@@ -198,7 +198,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         <div className="auth-callback-screen">
           <div className="loader" />
           <div className="auth-callback-title">Finishing sign in</div>
-          <div className="auth-callback-sub">Securing your Cavopay session...</div>
+          <div className="auth-callback-sub">Securing your Cavo session...</div>
         </div>
       </AuthContext.Provider>
     )
@@ -207,8 +207,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
-export function useCavopayAuth() {
+export function useCavoAuth() {
   const ctx = useContext(AuthContext)
-  if (!ctx) throw new Error('useCavopayAuth must be used within AuthProvider')
+  if (!ctx) throw new Error('useCavoAuth must be used within AuthProvider')
   return ctx
 }

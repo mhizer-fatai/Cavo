@@ -1,5 +1,5 @@
 /* ============================================================
-   Cavopay — Light Fintech Design System
+   Cavo — Light Fintech Design System
    Canvas #F6F7F6 · Cards #FFFFFF · Primary emerald #0E6B4E
    Headlines: Manrope · Body: Inter · Mono: JetBrains Mono
    No neon, no glow, no gradients, no glass.
@@ -886,7 +886,7 @@ select.form-input { appearance: none; background-image: linear-gradient(45deg, t
 .home-h2 { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; }
 .home-body { color: var(--text2); font-size: 15px; line-height: 1.65; margin-top: 14px; }
 
-/* What is Cavopay */
+/* What is Cavo */
 .home-about-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center; }
 .home-stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .stat-card {
@@ -928,7 +928,7 @@ select.form-input { appearance: none; background-image: linear-gradient(45deg, t
 .feature-title { font-family: var(--font-head); font-size: 16px; font-weight: 700; }
 .feature-desc { color: var(--text2); font-size: 13px; line-height: 1.6; margin-top: 8px; }
 
-/* Why Cavopay */
+/* Why Cavo */
 .home-why-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
 .why-item {
   height: 100%;

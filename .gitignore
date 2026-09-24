@@ -11,7 +11,7 @@ dist/
 build/
 out/
 .next/
-CAVOPAY_DIST/
+CAVO_DIST/
 .dev-logs/
 backend/recovery/
 

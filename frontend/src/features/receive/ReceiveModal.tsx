@@ -8,7 +8,7 @@ type ReceiveModalProps = {
   claimLoading: boolean
   claimName: string
   loginLabel: string
-  cavopayWalletAddress?: string
+  cavoWalletAddress?: string
   profile: Profile | null
   qrValue: string
   onClaim: () => void
@@ -21,7 +21,7 @@ export default function ReceiveModal({
   claimLoading,
   claimName,
   loginLabel,
-  cavopayWalletAddress,
+  cavoWalletAddress,
   profile,
   qrValue,
   onClaim,
@@ -38,7 +38,7 @@ export default function ReceiveModal({
           </button>
         </div>
         <div className="wc-sub receive-sub">
-          Show this QR to receive a Cavopay payment. The payer opens your profile, reviews the details, and sends funds to your Cavopay wallet on Arc.
+          Show this QR to receive a Cavo payment. The payer opens your profile, reviews the details, and sends funds to your Cavo wallet on Arc.
         </div>
 
         <div className="receive-body">
@@ -52,7 +52,7 @@ export default function ReceiveModal({
           <div className="form-stack receive-details">
             {profile && (
               <div className="form-group">
-                <label className="form-label">Your Cavopay QR Link</label>
+                <label className="form-label">Your Cavo QR Link</label>
                 <div className="link-box receive-link-box">
                   <span className="link-url">{window.location.origin}/u/{profile.username}</span>
                   <CopyButton text={`${window.location.origin}/u/${profile.username}`} />
@@ -61,10 +61,10 @@ export default function ReceiveModal({
             )}
 
             <div className="form-group">
-              <label className="form-label">Cavopay Wallet Address</label>
+              <label className="form-label">Cavo Wallet Address</label>
               <div className="link-box receive-link-box">
-                <span className="link-url">{cavopayWalletAddress || 'Creating Cavopay wallet...'}</span>
-                {cavopayWalletAddress && <CopyButton text={cavopayWalletAddress} />}
+                <span className="link-url">{cavoWalletAddress || 'Creating Cavo wallet...'}</span>
+                {cavoWalletAddress && <CopyButton text={cavoWalletAddress} />}
               </div>
             </div>
 
@@ -91,7 +91,7 @@ export default function ReceiveModal({
                   value={claimName}
                   onChange={event => onClaimNameChange(event.target.value.toLowerCase().replace(/[^a-z0-9]/g, ''))}
                 />
-                <button className="btn btn-primary" onClick={onClaim} disabled={claimLoading || !claimName || !cavopayWalletAddress}>
+                <button className="btn btn-primary" onClick={onClaim} disabled={claimLoading || !claimName || !cavoWalletAddress}>
                   {claimLoading ? '...' : 'Claim'}
                 </button>
               </div>

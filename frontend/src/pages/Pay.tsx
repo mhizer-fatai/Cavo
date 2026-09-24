@@ -7,8 +7,8 @@ import { AlertCircle, Check, CheckCircle2, ExternalLink, Hourglass, QrCode, Refr
 import { getPaymentLink, getTokenTransfers, logPayment, type PaymentLink } from '../lib/api'
 import PaymentWalletButton from '../components/PaymentWalletButton'
 import PaymentSuccessCelebration from '../components/PaymentSuccessCelebration'
-import { ARC_TESTNET_CHAIN, CAVOPAY_CONTRACT_ADDRESS, CAVOPAYNT_SOURCE_CHAINS, TOKENS, arcTestnet, getPaymentSourceChain, type PaymentSourceChain } from '../lib/config'
-import { ERC20_ABI, CAVOPAY_ABI } from '../lib/contracts'
+import { ARC_TESTNET_CHAIN, CAVO_CONTRACT_ADDRESS, PAYMENT_SOURCE_CHAINS, TOKENS, arcTestnet, getPaymentSourceChain, type PaymentSourceChain } from '../lib/config'
+import { ERC20_ABI, CAVO_ABI } from '../lib/contracts'
 import { ensureWalletChain, waitForHash } from '../lib/transactions'
 import { bridgePaymentToArc } from '../lib/bridge'
 
@@ -82,7 +82,7 @@ export default function PayPage() {
     address: token.address,
     abi: ERC20_ABI,
     functionName: 'allowance',
-    args: address ? [address, CAVOPAY_CONTRACT_ADDRESS] : undefined,
+    args: address ? [address, CAVO_CONTRACT_ADDRESS] : undefined,
     chainId: arcTestnet.id,
     query: { enabled: !!address && amountRaw > 0n },
   })
@@ -142,7 +142,7 @@ export default function PayPage() {
         address: token.address,
         abi: ERC20_ABI,
         functionName: 'approve',
-        args: [CAVOPAY_CONTRACT_ADDRESS, amountRaw],
+        args: [CAVO_CONTRACT_ADDRESS, amountRaw],
         chainId: arcTestnet.id,
       })
       setTxFeedback('submitted')
@@ -171,8 +171,8 @@ export default function PayPage() {
         await ensureWalletChain(wagmiConfig, chainId, arcTestnet.id)
         setTxFeedback('wallet')
         hash = await writeContractAsync({
-          address: CAVOPAY_CONTRACT_ADDRESS,
-          abi: CAVOPAY_ABI,
+          address: CAVO_CONTRACT_ADDRESS,
+          abi: CAVO_ABI,
           functionName: 'pay',
           args: [
             uuidToBytes32(link.id),
@@ -297,8 +297,8 @@ export default function PayPage() {
         <div className="checkout-card-pro">
           <div className="checkout-topbar">
             <Link to="/" className="checkout-brand">
-              <img src="/cavopay-logo.png" alt="Cavopay" />
-              <span>Cavopay</span>
+              <img src="/cavo-logo.png" alt="Cavo" />
+              <span>Cavo</span>
             </Link>
             <PaymentWalletButton />
           </div>
@@ -337,7 +337,7 @@ export default function PayPage() {
             <div className="form-group">
               <label className="form-label">Pay from network</label>
               <select className="form-input" value={sourceChain} disabled={isEurc} onChange={event => setSourceChain(event.target.value as PaymentSourceChain)}>
-                {CAVOPAYNT_SOURCE_CHAINS.map(chain => <option key={chain.value} value={chain.value}>{chain.label}</option>)}
+                {PAYMENT_SOURCE_CHAINS.map(chain => <option key={chain.value} value={chain.value}>{chain.label}</option>)}
               </select>
               {isEurc && <p className="checkout-helper">EURC payments are Arc-only right now.</p>}
             </div>
@@ -408,7 +408,7 @@ export default function PayPage() {
 
             <div className="checkout-security-note">
               <ShieldCheck size={15} />
-              <span>Secured with wallet approval. Cavopay never asks for your wallet seed phrase.</span>
+              <span>Secured with wallet approval. Cavo never asks for your wallet seed phrase.</span>
             </div>
           </div>
         </div>

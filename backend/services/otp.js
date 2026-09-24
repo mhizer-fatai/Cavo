@@ -53,11 +53,11 @@ function buildEmailHtml(code) {
         <div style="height:5px;background:linear-gradient(90deg,#18d8ef,#22d3ee,#14b8a6);"></div>
         <div style="padding:34px 30px 32px;">
           <div style="margin-bottom:34px;">
-            <div style="color:#ffffff;font-size:24px;font-weight:900;letter-spacing:-.03em;">Cavopay</div>
+            <div style="color:#ffffff;font-size:24px;font-weight:900;letter-spacing:-.03em;">Cavo</div>
             <div style="color:#7f93a8;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;">Secure login</div>
           </div>
 
-          <div style="color:#d8e4ee;font-size:17px;line-height:1.5;font-weight:700;margin-bottom:22px;">Your Cavopay login code is</div>
+          <div style="color:#d8e4ee;font-size:17px;line-height:1.5;font-weight:700;margin-bottom:22px;">Your Cavo login code is</div>
 
           <div style="background:#111827;border:1px solid #253243;border-radius:24px;padding:30px 18px;text-align:center;margin-bottom:26px;">
             <span style="font-size:48px;line-height:1;font-weight:900;letter-spacing:.24em;color:#ffffff;">${escapeHtml(spacedCode)}</span>
@@ -78,9 +78,9 @@ function buildEmailHtml(code) {
 
 function buildEmailText(code) {
   return [
-    "Cavopay",
+    "Cavo",
     "",
-    `Your Cavopay login code is: ${code}`,
+    `Your Cavo login code is: ${code}`,
     "",
     `This code expires in ${OTP_EXPIRES_MINUTES} minutes. Do not share it with anyone.`,
     "",
@@ -199,7 +199,7 @@ async function requestEmailCode(rawEmail) {
 
   await sendEmail({
     to: email,
-    subject: "Your Cavopay login code",
+    subject: "Your Cavo login code",
     html: buildEmailHtml(code),
     text: buildEmailText(code),
   });

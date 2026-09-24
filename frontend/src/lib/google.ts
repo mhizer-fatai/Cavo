@@ -1,5 +1,5 @@
-const GOOGLE_STATE_KEY = 'cavopay.googleOAuthState'
-const GOOGLE_NONCE_KEY = 'cavopay.googleOAuthNonce'
+const GOOGLE_STATE_KEY = 'cavo.googleOAuthState'
+const GOOGLE_NONCE_KEY = 'cavo.googleOAuthNonce'
 const GOOGLE_GSI_SCRIPT = 'https://accounts.google.com/gsi/client'
 
 declare global {
@@ -79,7 +79,7 @@ async function buildGoogleResultFromAccessToken(accessToken: string) {
   }
 
 function dispatchGoogleComplete(error: any, result: any = null) {
-  window.dispatchEvent(new CustomEvent('cavopay:google-login-complete', {
+  window.dispatchEvent(new CustomEvent('cavo:google-login-complete', {
     detail: { error, errorMessage: error?.message || String(error || ''), result },
   }))
 }

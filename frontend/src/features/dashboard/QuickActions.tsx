@@ -26,7 +26,7 @@ export default function QuickActions({
     <div className="card glass quick-actions-card">
       <div className="quick-actions-heading">
         <h3>Actions</h3>
-        <p>Send, swap, earn, receive, or scan a Cavopay QR on mobile.</p>
+        <p>Send, swap, earn, receive, or scan a Cavo QR on mobile.</p>
       </div>
       <div className="quick-actions-content">
         <div className="quick-actions-row">

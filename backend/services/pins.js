@@ -7,10 +7,10 @@ const PIN_LENGTH = 4;
 const APPROVAL_TTL_MS = 90 * 1000;
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCK_MS = 10 * 60 * 1000;
-const MAX_SINGLE_SEND = Number(process.env.CAVOPAY_MAX_SINGLE_SEND_USDC || 500);
-const MAX_DAILY_SEND = Number(process.env.CAVOPAY_MAX_DAILY_SEND_USDC || 2000);
+const MAX_SINGLE_SEND = Number(process.env.CAVO_MAX_SINGLE_SEND_USDC || 500);
+const MAX_DAILY_SEND = Number(process.env.CAVO_MAX_DAILY_SEND_USDC || 2000);
 const DEFAULT_DESTINATION_CHAIN = "Arc_Testnet";
-const CAVOPAY_RECOVERY_QUESTIONS = [
+const CAVO_RECOVERY_QUESTIONS = [
   "What city were you born in?",
   "What is the name of your first school?",
 ];
@@ -36,9 +36,9 @@ function normalizeAddress(value) {
 }
 
 function getPinPepper() {
-  const pepper = String(process.env.CAVOPAY_PIN_PEPPER || "").trim();
+  const pepper = String(process.env.CAVO_PIN_PEPPER || "").trim();
   if (pepper.length < PEPPER_MIN_LENGTH) {
-    throw Object.assign(new Error("CAVOPAY_PIN_PEPPER is not configured"), { status: 500 });
+    throw Object.assign(new Error("CAVO_PIN_PEPPER is not configured"), { status: 500 });
   }
   return pepper;
 }
@@ -47,7 +47,7 @@ function buildPepperedSecret(kind, userKey, secret) {
   const normalizedUserKey = normalizeUserKey(userKey);
   if (!normalizedUserKey) throw Object.assign(new Error("Valid user key is required"), { status: 400 });
   return [
-    "cavopay",
+    "cavo",
     kind,
     normalizedUserKey,
     String(secret || ""),
@@ -89,7 +89,7 @@ function normalizeRecoveryAnswers(value, fallback) {
 }
 
 function buildRecoverySecret(answers) {
-  return answers.join("\n::cavopay-security-answer::\n");
+  return answers.join("\n::cavo-security-answer::\n");
 }
 
 function normalizeAmount(value) {
@@ -106,7 +106,7 @@ function normalizeDestinationChain(value) {
 async function supportsTables() {
   if (!supabase) return false;
   if (tableSupport !== null) return tableSupport;
-  const { error } = await supabase.from("cavopay_pins").select("user_key").limit(1);
+  const { error } = await supabase.from("cavo_pins").select("user_key").limit(1);
   tableSupport = !error;
   return tableSupport;
 }
@@ -127,7 +127,7 @@ async function verifyHash(secret, salt, expectedHash) {
 async function getPinRecord(userKey) {
   if (await supportsTables()) {
     const { data, error } = await supabase
-      .from("cavopay_pins")
+      .from("cavo_pins")
       .select("*")
       .eq("user_key", userKey)
       .maybeSingle();
@@ -142,7 +142,7 @@ async function savePinRecord(record) {
   const next = { ...record, updated_at: now };
   if (await supportsTables()) {
     const { error } = await supabase
-      .from("cavopay_pins")
+      .from("cavo_pins")
       .upsert(next, { onConflict: "user_key" });
     if (error) throw error;
     return next;
@@ -168,9 +168,9 @@ async function recordAudit(eventType, details = {}) {
   };
 
   if (await supportsTables()) {
-    const { error } = await supabase.from("cavopay_security_events").insert(event);
+    const { error } = await supabase.from("cavo_security_events").insert(event);
     if (error) {
-      console.warn("Failed to write Cavopay security event:", error.message);
+      console.warn("Failed to write Cavo security event:", error.message);
     }
   } else {
     memoryAuditEvents.push(event);
@@ -187,7 +187,7 @@ async function enforceSpendingLimits(userKey, amount) {
   let approvals = [];
   if (await supportsTables()) {
     const { data, error } = await supabase
-      .from("cavopay_pin_approvals")
+      .from("cavo_pin_approvals")
       .select("amount")
       .eq("user_key", userKey)
       .not("used_at", "is", null)
@@ -218,14 +218,14 @@ async function getPinStatus(userKey) {
 async function setupPin(userKey, pin, recoveryAnswers, fallbackRecoveryAnswer) {
   const normalizedUserKey = normalizeUserKey(userKey);
   if (!normalizedUserKey) throw Object.assign(new Error("Valid user key is required"), { status: 400 });
-  if (!isValidPin(pin)) throw Object.assign(new Error("Cavopay PIN must be 4 digits"), { status: 400 });
+  if (!isValidPin(pin)) throw Object.assign(new Error("Cavo PIN must be 4 digits"), { status: 400 });
   const answers = normalizeRecoveryAnswers(recoveryAnswers, fallbackRecoveryAnswer);
-  if (answers.length !== CAVOPAY_RECOVERY_QUESTIONS.length || answers.some(answer => answer.length < 3)) {
-    throw Object.assign(new Error("Answer both Cavopay security questions"), { status: 400 });
+  if (answers.length !== CAVO_RECOVERY_QUESTIONS.length || answers.some(answer => answer.length < 3)) {
+    throw Object.assign(new Error("Answer both Cavo security questions"), { status: 400 });
   }
 
   const existing = await getPinRecord(normalizedUserKey);
-  if (existing) throw Object.assign(new Error("Cavopay PIN is already set"), { status: 409 });
+  if (existing) throw Object.assign(new Error("Cavo PIN is already set"), { status: 409 });
 
   const { salt, hash } = await hashSecret(buildPepperedSecret("pin", normalizedUserKey, pin));
   const recovery = await hashSecret(buildPepperedSecret("recovery", normalizedUserKey, buildRecoverySecret(answers)));
@@ -234,7 +234,7 @@ async function setupPin(userKey, pin, recoveryAnswers, fallbackRecoveryAnswer) {
     user_key: normalizedUserKey,
     pin_hash: hash,
     salt,
-    recovery_question: JSON.stringify(CAVOPAY_RECOVERY_QUESTIONS),
+    recovery_question: JSON.stringify(CAVO_RECOVERY_QUESTIONS),
     recovery_answer_hash: recovery.hash,
     recovery_answer_salt: recovery.salt,
     failed_attempts: 0,
@@ -260,10 +260,10 @@ async function changePin(payload) {
   const currentPin = String(payload.currentPin || "");
   const newPin = String(payload.newPin || "");
   if (!userKey) throw Object.assign(new Error("Valid user key is required"), { status: 400 });
-  if (!isValidPin(newPin)) throw Object.assign(new Error("New Cavopay PIN must be 4 digits"), { status: 400 });
+  if (!isValidPin(newPin)) throw Object.assign(new Error("New Cavo PIN must be 4 digits"), { status: 400 });
 
   const record = await getPinRecord(userKey);
-  if (!record) throw Object.assign(new Error("Set your Cavopay PIN first"), { status: 409, code: "PIN_NOT_SET" });
+  if (!record) throw Object.assign(new Error("Set your Cavo PIN first"), { status: 409, code: "PIN_NOT_SET" });
 
   const lockedUntil = record.locked_until ? new Date(record.locked_until).getTime() : 0;
   if (lockedUntil && lockedUntil > Date.now()) {
@@ -292,25 +292,25 @@ async function setRecoveryQuestion(payload) {
   const pin = String(payload.pin || "");
   const answers = normalizeRecoveryAnswers(payload.recoveryAnswers, payload.recoveryAnswer);
   if (!userKey) throw Object.assign(new Error("Valid user key is required"), { status: 400 });
-  if (answers.length !== CAVOPAY_RECOVERY_QUESTIONS.length || answers.some(answer => answer.length < 3)) {
-    throw Object.assign(new Error("Answer both Cavopay security questions"), { status: 400 });
+  if (answers.length !== CAVO_RECOVERY_QUESTIONS.length || answers.some(answer => answer.length < 3)) {
+    throw Object.assign(new Error("Answer both Cavo security questions"), { status: 400 });
   }
 
   const record = await getPinRecord(userKey);
-  if (!record) throw Object.assign(new Error("Set your Cavopay PIN first"), { status: 409, code: "PIN_NOT_SET" });
+  if (!record) throw Object.assign(new Error("Set your Cavo PIN first"), { status: 409, code: "PIN_NOT_SET" });
   if (!await verifyPinRecord(record, pin)) throw Object.assign(new Error("Incorrect Payment PIN"), { status: 401 });
 
   const recovery = await hashSecret(buildPepperedSecret("recovery", userKey, buildRecoverySecret(answers)));
   await savePinRecord({
     ...record,
-    recovery_question: JSON.stringify(CAVOPAY_RECOVERY_QUESTIONS),
+    recovery_question: JSON.stringify(CAVO_RECOVERY_QUESTIONS),
     recovery_answer_hash: recovery.hash,
     recovery_answer_salt: recovery.salt,
     recovery_failed_attempts: 0,
     recovery_locked_until: null,
   });
   await recordAudit("pin_recovery_question_set", { userKey });
-  return { ok: true, hasRecoveryQuestion: true, recoveryQuestion: JSON.stringify(CAVOPAY_RECOVERY_QUESTIONS), recoveryQuestions: CAVOPAY_RECOVERY_QUESTIONS };
+  return { ok: true, hasRecoveryQuestion: true, recoveryQuestion: JSON.stringify(CAVO_RECOVERY_QUESTIONS), recoveryQuestions: CAVO_RECOVERY_QUESTIONS };
 }
 
 async function recoverPin(payload) {
@@ -318,9 +318,9 @@ async function recoverPin(payload) {
   const answers = normalizeRecoveryAnswers(payload.recoveryAnswers, payload.recoveryAnswer);
   const newPin = String(payload.newPin || "");
   if (!userKey) throw Object.assign(new Error("Valid user key is required"), { status: 400 });
-  if (!isValidPin(newPin)) throw Object.assign(new Error("New Cavopay PIN must be 4 digits"), { status: 400 });
-  if (answers.length !== CAVOPAY_RECOVERY_QUESTIONS.length || answers.some(answer => answer.length < 3)) {
-    throw Object.assign(new Error("Answer both Cavopay security questions"), { status: 400 });
+  if (!isValidPin(newPin)) throw Object.assign(new Error("New Cavo PIN must be 4 digits"), { status: 400 });
+  if (answers.length !== CAVO_RECOVERY_QUESTIONS.length || answers.some(answer => answer.length < 3)) {
+    throw Object.assign(new Error("Answer both Cavo security questions"), { status: 400 });
   }
 
   const record = await getPinRecord(userKey);
@@ -418,7 +418,7 @@ async function createApproval(payload) {
   await enforceSpendingLimits(userKey, amount);
 
   const record = await getPinRecord(userKey);
-  if (!record) throw Object.assign(new Error("Set your Cavopay PIN before sending"), { status: 409, code: "PIN_NOT_SET" });
+  if (!record) throw Object.assign(new Error("Set your Cavo PIN before sending"), { status: 409, code: "PIN_NOT_SET" });
 
   const lockedUntil = record.locked_until ? new Date(record.locked_until).getTime() : 0;
   if (lockedUntil && lockedUntil > Date.now()) {
@@ -443,7 +443,7 @@ async function createApproval(payload) {
       token: approvalToken,
       metadata: { failedAttempts: failed, locked: !!locked, transactionType },
     });
-    throw Object.assign(new Error(locked ? "Too many wrong PIN attempts. Try again later." : "Incorrect Cavopay PIN"), {
+    throw Object.assign(new Error(locked ? "Too many wrong PIN attempts. Try again later." : "Incorrect Cavo PIN"), {
       status: locked ? 429 : 401,
     });
   }
@@ -465,7 +465,7 @@ async function createApproval(payload) {
   };
 
   if (await supportsTables()) {
-    const { error } = await supabase.from("cavopay_pin_approvals").insert(approval);
+    const { error } = await supabase.from("cavo_pin_approvals").insert(approval);
     if (error) throw error;
   } else {
     memoryApprovals.set(approval.id, approval);
@@ -486,12 +486,12 @@ async function createApproval(payload) {
 
 async function consumeApproval(payload) {
   const approvalId = String(payload.approvalId || "").trim();
-  if (!approvalId) throw Object.assign(new Error("Cavopay PIN approval is required"), { status: 401 });
+  if (!approvalId) throw Object.assign(new Error("Cavo PIN approval is required"), { status: 401 });
 
   let approval;
   if (await supportsTables()) {
     const { data, error } = await supabase
-      .from("cavopay_pin_approvals")
+      .from("cavo_pin_approvals")
       .select("*")
       .eq("id", approvalId)
       .maybeSingle();
@@ -501,10 +501,10 @@ async function consumeApproval(payload) {
     approval = memoryApprovals.get(approvalId);
   }
 
-  if (!approval) throw Object.assign(new Error("Cavopay PIN approval was not found"), { status: 401 });
-  if (approval.used_at) throw Object.assign(new Error("Cavopay PIN approval was already used"), { status: 401 });
+  if (!approval) throw Object.assign(new Error("Cavo PIN approval was not found"), { status: 401 });
+  if (approval.used_at) throw Object.assign(new Error("Cavo PIN approval was already used"), { status: 401 });
   if (new Date(approval.expires_at).getTime() < Date.now()) {
-    throw Object.assign(new Error("Cavopay PIN approval expired. Enter PIN again."), { status: 401 });
+    throw Object.assign(new Error("Cavo PIN approval expired. Enter PIN again."), { status: 401 });
   }
 
   const expectedChain = normalizeDestinationChain(payload.destinationChain);
@@ -529,12 +529,12 @@ async function consumeApproval(payload) {
     approval.amount === expected.amount &&
     approval.token === expected.token;
 
-  if (!matches) throw Object.assign(new Error("Cavopay PIN approval does not match this transaction"), { status: 401 });
+  if (!matches) throw Object.assign(new Error("Cavo PIN approval does not match this transaction"), { status: 401 });
 
   const usedAt = new Date().toISOString();
   if (await supportsTables()) {
     const { error } = await supabase
-      .from("cavopay_pin_approvals")
+      .from("cavo_pin_approvals")
       .update({ used_at: usedAt })
       .eq("id", approvalId)
       .is("used_at", null);

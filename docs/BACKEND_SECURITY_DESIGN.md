@@ -1,4 +1,4 @@
-# Cavopay Backend Security & API Design (Mainnet-Grade)
+# Cavo Backend Security & API Design (Mainnet-Grade)
 
 Status: design spec for mainnet hardening of the existing Express backend.
 Catalog basis: AAS `api-security`, `api-security-best-practices`, `api-endpoint-builder`, `api-analyzer`.
@@ -8,7 +8,7 @@ Catalog basis: AAS `api-security`, `api-security-best-practices`, `api-endpoint-
 ## 1. Concepts — what each layer actually protects
 
 ### Authentication (AuthN) — "who are you"
-Proves identity before anything else happens. For Cavopay the proof is **possession of the mailbox** (email OTP). The one rule that matters: **the server must verify possession, never trust a client-declared identity.** Every downstream check (ownership, PIN, balances) is only as strong as this one.
+Proves identity before anything else happens. For Cavo the proof is **possession of the mailbox** (email OTP). The one rule that matters: **the server must verify possession, never trust a client-declared identity.** Every downstream check (ownership, PIN, balances) is only as strong as this one.
 
 ### Authorization (AuthZ) — "what may you do"
 Once authenticated, every resource access checks **ownership**: the token's `sub` must own the resource being read or mutated. Identity is derived from the token, never from `req.body` or query. Money-movement endpoints add a **second factor (step-up)**: the Payment PIN.
@@ -31,7 +31,7 @@ Once authenticated, every resource access checks **ownership**: the token's `sub
 | PIN lockout | `failed_attempts` + `locked_until` (already implemented) |
 | Idempotency keys | `Idempotency-Key` on money-movement POSTs; retries return the original result — prevents double-send |
 | Audit log | Append-only: who, what, when, ip, outcome — every auth + money event |
-| Secret hygiene | Dedicated `CAVOPAY_SESSION_SECRET` (32+ bytes), **no fallback to Circle secrets**, rotate quarterly |
+| Secret hygiene | Dedicated `CAVO_SESSION_SECRET` (32+ bytes), **no fallback to Circle secrets**, rotate quarterly |
 | DB least privilege | Supabase RLS; backend uses service role only server-side |
 | Replay protection | Single-use OTP codes; one-time tracking IDs |
 
@@ -47,12 +47,12 @@ Once authenticated, every resource access checks **ownership**: the token's `sub
 - Ownership middleware `requireMatchingUserKey` on most routes
 
 ### Critical — blocks mainnet
-1. **`POST /api/auth/session` mints a valid session for any client-declared email.** It validates format only — no OTP, no signature, no possession proof (auth.js:50-52 → cavopaySessionService.js:26-58). Anyone who knows a victim's email can forge a token and pass every `requireMatchingUserKey` check. This is the hole the entire chain sits behind.
-2. **Session secret falls back to `CIRCLE_ENTITY_SECRET` / `CIRCLE_API_KEY`** (cavopaySessionService.js:10). One leaked Circle secret = forged sessions for all users.
+1. **`POST /api/auth/session` mints a valid session for any client-declared email.** It validates format only — no OTP, no signature, no possession proof (auth.js:50-52 → cavoSessionService.js:26-58). Anyone who knows a victim's email can forge a token and pass every `requireMatchingUserKey` check. This is the hole the entire chain sits behind.
+2. **Session secret falls back to `CIRCLE_ENTITY_SECRET` / `CIRCLE_API_KEY`** (cavoSessionService.js:10). One leaked Circle secret = forged sessions for all users.
 3. **No refresh token** — 1-hour TTL, hard re-login, no rotation.
 4. **No revocation** — no `jti`/`sid` denylist; logout does not invalidate; a stolen token is valid until exp.
 5. **No `iss` / `aud` claims** — tokens are valid in any context.
-6. **No rate limits on `/api/auth`, `/api/payments`, `/api/cavopay-pin`, `/api/profiles`, `/api/wallets`** — money-movement and PIN endpoints can be hammered.
+6. **No rate limits on `/api/auth`, `/api/payments`, `/api/cavo-pin`, `/api/profiles`, `/api/wallets`** — money-movement and PIN endpoints can be hammered.
 7. **`POST /api/payments` has no auth middleware at all** (payments.js:19).
 8. **No helmet, no idempotency keys** on money movement.
 
@@ -87,7 +87,7 @@ Legend: **ACCESS** = valid access JWT · **PIN** = Payment PIN step-up · **OWN*
 |---|---|---|---|---|
 | GET | `/api/wallets/me` | ACCESS | Balances + wallet list | identity from token |
 | POST | `/api/wallets/create` | ACCESS | Create Circle wallet | idempotent per user |
-| POST | `/api/wallets/send` | ACCESS+PIN | Cavopay-to-Cavopay send (Arc only) | `Idempotency-Key` required |
+| POST | `/api/wallets/send` | ACCESS+PIN | Cavo-to-Cavo send (Arc only) | `Idempotency-Key` required |
 | POST | `/api/wallets/bridge` | ACCESS+PIN | CCTP bridge to EOA on any supported chain | address validated per chain; `Idempotency-Key` required |
 | GET | `/api/wallets/transactions/:trackingId` | ACCESS+OWN | Tx status | |
 | GET | `/api/wallets/destination-chains` | PUB | Supported CCTP chains | |
@@ -103,12 +103,12 @@ Legend: **ACCESS** = valid access JWT · **PIN** = Payment PIN step-up · **OWN*
 ### Payment PIN (step-up factor)
 | Method | Path | Auth | Purpose | Notes |
 |---|---|---|---|---|
-| GET | `/api/cavopay-pin/status` | ACCESS | Has PIN? | |
-| POST | `/api/cavopay-pin/setup` | ACCESS | Create PIN | scrypt + pepper (existing) |
-| POST | `/api/cavopay-pin/change` | ACCESS+PIN | Change PIN | requires current PIN |
-| POST | `/api/cavopay-pin/approve` | ACCESS | Approve a transaction binding | strict rate limit; binds amount/chain/recipient |
-| POST | `/api/cavopay-pin/recovery-question` | ACCESS | Set recovery answers | |
-| POST | `/api/cavopay-pin/recover` | PUB (strict) | Recover via answers | lockout + IP bucket |
+| GET | `/api/cavo-pin/status` | ACCESS | Has PIN? | |
+| POST | `/api/cavo-pin/setup` | ACCESS | Create PIN | scrypt + pepper (existing) |
+| POST | `/api/cavo-pin/change` | ACCESS+PIN | Change PIN | requires current PIN |
+| POST | `/api/cavo-pin/approve` | ACCESS | Approve a transaction binding | strict rate limit; binds amount/chain/recipient |
+| POST | `/api/cavo-pin/recovery-question` | ACCESS | Set recovery answers | |
+| POST | `/api/cavo-pin/recover` | PUB (strict) | Recover via answers | lockout + IP bucket |
 
 ### Earn (ArcLend)
 | Method | Path | Auth | Purpose | Notes |
@@ -155,8 +155,8 @@ request-id → helmet → cors(allowlist) → rate-limit
 ### Access JWT (RS256, `kid`-keyed)
 ```json
 {
-  "iss": "cavopay-api",
-  "aud": "cavopay-web",
+  "iss": "cavo-api",
+  "aud": "cavo-web",
   "sub": "email:user@example.com",
   "sid": "<session-id>",
   "jti": "<token-id>",
@@ -168,13 +168,13 @@ TTL 900 s (15 min). Delivered in the JSON body at login/refresh; held in memory 
 
 ### Refresh token
 - 256-bit random value; only its SHA-256 hash is stored server-side.
-- Cookie: `cavopay_rt` — `HttpOnly; SameSite=Strict; Path=/api/auth; Max-Age=2592000` (30 d); `Secure` in production.
+- Cookie: `cavo_rt` — `HttpOnly; SameSite=Strict; Path=/api/auth; Max-Age=2592000` (30 d); `Secure` in production.
 - Rotated on every `/api/auth/refresh`; rotation chain tracked per session (`sid`).
 - Re-presenting an already-rotated token = theft signal → whole `sid` family revoked.
 
 ### Schema additions (Supabase)
 ```sql
-create table if not exists cavopay_sessions (
+create table if not exists cavo_sessions (
   id uuid primary key default gen_random_uuid(),
   user_key text not null,
   refresh_hash text not null,
@@ -185,9 +185,9 @@ create table if not exists cavopay_sessions (
   expires_at timestamptz not null,
   revoked_at timestamptz
 );
-create index if not exists cavopay_sessions_user_idx on cavopay_sessions (user_key);
+create index if not exists cavo_sessions_user_idx on cavo_sessions (user_key);
 
-create table if not exists cavopay_revoked_jti (
+create table if not exists cavo_revoked_jti (
   jti text primary key,
   expires_at timestamptz not null
 );
@@ -211,9 +211,9 @@ create table if not exists api_idempotency (
 ## 5. Implementation order (each step independently shippable)
 
 1. **Close the `/session` hole** — make `POST /api/auth/otp/verify` the only session-establishing endpoint; delete or gate `POST /api/auth/session` behind OTP verification. *Highest severity, smallest diff.*
-2. **Dedicated session secret** — require `CAVOPAY_SESSION_SECRET` (fail closed), remove Circle fallbacks. Generate RS256 keypair + `kid` when moving to asymmetric signing.
-3. **Refresh rotation + revocation** — add `cavopay_sessions` + `cavopay_revoked_jti`; implement `/api/auth/refresh`, `/api/auth/logout`, session list/revoke.
-4. **Derive identity from token** — `requireMatchingUserKey` stops reading `req.body.userKey`; handlers use `req.cavopaySession.sub`.
+2. **Dedicated session secret** — require `CAVO_SESSION_SECRET` (fail closed), remove Circle fallbacks. Generate RS256 keypair + `kid` when moving to asymmetric signing.
+3. **Refresh rotation + revocation** — add `cavo_sessions` + `cavo_revoked_jti`; implement `/api/auth/refresh`, `/api/auth/logout`, session list/revoke.
+4. **Derive identity from token** — `requireMatchingUserKey` stops reading `req.body.userKey`; handlers use `req.cavoSession.sub`.
 5. **Missing rate limits + helmet** — strict buckets on auth / PIN / payments / profiles / wallets; helmet defaults + CSP.
 6. **Idempotency middleware** — `api_idempotency` table + wrapper on money-movement POSTs.
 7. **Schema validation** — zod schemas per route; reject unknown fields; canonicalize addresses.

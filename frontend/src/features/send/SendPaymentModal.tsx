@@ -1,6 +1,6 @@
 import { X } from 'lucide-react'
 import PinDotsInput from '../../components/PinDotsInput'
-import { CAVOPAY_SECURITY_QUESTIONS } from '../../lib/config'
+import { CAVO_SECURITY_QUESTIONS } from '../../lib/config'
 import type { Profile } from '../../lib/api'
 
 export type SendStep = 'details' | 'pin' | 'processing'
@@ -23,9 +23,9 @@ type SendPaymentModalProps = {
   chains: DestinationChain[]
   confirmPin: string
   destinationChain: string
-  hasCavopayPin: boolean | null
+  hasCavoPin: boolean | null
   isSending: boolean
-  cavopayPin: string
+  cavoPin: string
   pendingSend: PendingSend | null
   securityAnswerOne: string
   securityAnswerTwo: string
@@ -40,7 +40,7 @@ type SendPaymentModalProps = {
   onClose: () => void
   onConfirmPinChange: (value: string) => void
   onDestinationChainChange: (value: string) => void
-  onCavopayPinChange: (value: string) => void
+  onCavoPinChange: (value: string) => void
   onRecipientChange: (value: string) => void
   onSecurityAnswerOneChange: (value: string) => void
   onSecurityAnswerTwoChange: (value: string) => void
@@ -56,9 +56,9 @@ export default function SendPaymentModal({
   chains,
   confirmPin,
   destinationChain,
-  hasCavopayPin,
+  hasCavoPin,
   isSending,
-  cavopayPin,
+  cavoPin,
   pendingSend,
   securityAnswerOne,
   securityAnswerTwo,
@@ -73,7 +73,7 @@ export default function SendPaymentModal({
   onClose,
   onConfirmPinChange,
   onDestinationChainChange,
-  onCavopayPinChange,
+  onCavoPinChange,
   onRecipientChange,
   onSecurityAnswerOneChange,
   onSecurityAnswerTwoChange,
@@ -83,27 +83,27 @@ export default function SendPaymentModal({
   getChainLabel,
   shortenAddress,
 }: SendPaymentModalProps) {
-  const isCreatingPin = !hasCavopayPin
-  const canSubmitPin = cavopayPin.length === 4 && (
-    hasCavopayPin || (confirmPin.length === 4 && securityAnswerOne.trim() && securityAnswerTwo.trim())
+  const isCreatingPin = !hasCavoPin
+  const canSubmitPin = cavoPin.length === 4 && (
+    hasCavoPin || (confirmPin.length === 4 && securityAnswerOne.trim() && securityAnswerTwo.trim())
   )
 
   return (
     <div className="wc-modal" onClick={onClose}>
       <div className="card glass wc-card send-card" onClick={event => event.stopPropagation()}>
         <div className="wc-title modal-title-row">
-          {sendStep === 'details' ? 'Send Payment' : sendStep === 'processing' ? 'Payment Submitted' : hasCavopayPin ? 'Enter Payment PIN' : 'Create Payment PIN'}
+          {sendStep === 'details' ? 'Send Payment' : sendStep === 'processing' ? 'Payment Submitted' : hasCavoPin ? 'Enter Payment PIN' : 'Create Payment PIN'}
           <button className="icon-btn" onClick={onClose} aria-label="Close send payment">
             <X size={20} />
           </button>
         </div>
         <div className="wc-sub">
           {sendStep === 'details'
-            ? 'Send USDC or EURC instantly to any wallet or Cavopay user.'
+            ? 'Send USDC or EURC instantly to any wallet or Cavo user.'
             : sendStep === 'processing'
               ? 'Your transfer is on its way. The receipt will appear after network confirmation.'
-              : hasCavopayPin
-                ? 'Approve this exact payment. Your PIN is verified securely by Cavopay.'
+              : hasCavoPin
+                ? 'Approve this exact payment. Your PIN is verified securely by Cavo.'
                 : 'Create a 4-digit Payment PIN. You will use it to approve everyday sends.'}
         </div>
 
@@ -115,7 +115,7 @@ export default function SendPaymentModal({
                   {scannedRecipient.username.slice(0, 1).toUpperCase()}
                 </div>
                 <div>
-                  <span>Scanned Cavopay user</span>
+                  <span>Scanned Cavo user</span>
                   <strong>@{scannedRecipient.username}</strong>
                   <small>{shortenAddress(scannedRecipient.wallet_address)}</small>
                 </div>
@@ -128,11 +128,11 @@ export default function SendPaymentModal({
                 type="text"
                 value={sendDest}
                 onChange={(event) => onRecipientChange(event.target.value)}
-                placeholder="@username or Cavopay address"
+                placeholder="@username or Cavo address"
                 className="form-input"
               />
               <p style={{ color: 'var(--text3)', fontSize: 12, marginTop: 8 }}>
-                Send to a fellow Cavopay user. Settles on Arc in seconds — to move funds to other chains, use Withdraw.
+                Send to a fellow Cavo user. Settles on Arc in seconds — to move funds to other chains, use Withdraw.
               </p>
             </div>
 
@@ -200,9 +200,9 @@ export default function SendPaymentModal({
             ) : (
               <>
                 <PinDotsInput
-                  label={hasCavopayPin ? 'Payment PIN' : 'New Payment PIN'}
-                  value={cavopayPin}
-                  onChange={onCavopayPinChange}
+                  label={hasCavoPin ? 'Payment PIN' : 'New Payment PIN'}
+                  value={cavoPin}
+                  onChange={onCavoPinChange}
                   disabled={isSending}
                 />
 
@@ -215,7 +215,7 @@ export default function SendPaymentModal({
                       disabled={isSending}
                     />
                     <div className="form-group">
-                      <label className="form-label">{CAVOPAY_SECURITY_QUESTIONS[0]}</label>
+                      <label className="form-label">{CAVO_SECURITY_QUESTIONS[0]}</label>
                       <input
                         className="form-input"
                         placeholder="Your answer"
@@ -225,7 +225,7 @@ export default function SendPaymentModal({
                       />
                     </div>
                     <div className="form-group">
-                      <label className="form-label">{CAVOPAY_SECURITY_QUESTIONS[1]}</label>
+                      <label className="form-label">{CAVO_SECURITY_QUESTIONS[1]}</label>
                       <input
                         className="form-input"
                         placeholder="Answer"
@@ -244,7 +244,7 @@ export default function SendPaymentModal({
                   disabled={isSending || !canSubmitPin}
                   className="btn btn-primary btn-full send-submit-btn"
                 >
-                  {isSending ? 'Sending...' : hasCavopayPin ? 'Approve and Send' : 'Create PIN and Send'}
+                  {isSending ? 'Sending...' : hasCavoPin ? 'Approve and Send' : 'Create PIN and Send'}
                 </button>
                 <button onClick={onBackToDetails} disabled={isSending} className="btn btn-secondary btn-full">
                   Back

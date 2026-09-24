@@ -1,5 +1,5 @@
-// Cavopay contract ABI
-export const CAVOPAY_ABI = [
+// Cavo contract ABI
+export const CAVO_ABI = [
   {
     name: 'pay',
     type: 'function',

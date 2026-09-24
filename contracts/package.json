@@ -1,7 +1,7 @@
 {
-  "name": "cavopay-contracts",
+  "name": "cavo-contracts",
   "version": "1.0.0",
-  "description": "Cavopay smart contracts for Arc network",
+  "description": "Cavo smart contracts for Arc network",
   "scripts": {
     "compile": "hardhat compile",
     "deploy:testnet": "hardhat run scripts/deploy.js --network arc_testnet",

@@ -1,6 +1,6 @@
 import { PiggyBank, X } from 'lucide-react'
 import PinDotsInput from '../../components/PinDotsInput'
-import { CAVOPAY_SECURITY_QUESTIONS } from '../../lib/config'
+import { CAVO_SECURITY_QUESTIONS } from '../../lib/config'
 import type { EarnVault } from '../../lib/api'
 
 export type EarnToken = 'USDC' | 'EURC'
@@ -15,18 +15,18 @@ type EarnModalProps = {
   vaults: EarnVault[]
   earnError: string | null
   isEarning: boolean
-  cavopayPin: string
+  cavoPin: string
   confirmPin: string
   securityAnswerOne: string
   securityAnswerTwo: string
-  hasCavopayPin: boolean | null
+  hasCavoPin: boolean | null
   walletAddress: string
   availableBalance: string
   positionShares: number
   onAmountChange: (value: string) => void
   onTokenChange: (token: EarnToken) => void
   onModeChange: (mode: EarnMode) => void
-  onCavopayPinChange: (value: string) => void
+  onCavoPinChange: (value: string) => void
   onConfirmPinChange: (value: string) => void
   onSecurityAnswerOneChange: (value: string) => void
   onSecurityAnswerTwoChange: (value: string) => void
@@ -68,18 +68,18 @@ export default function EarnModal({
   vaults,
   earnError,
   isEarning,
-  cavopayPin,
+  cavoPin,
   confirmPin,
   securityAnswerOne,
   securityAnswerTwo,
-  hasCavopayPin,
+  hasCavoPin,
   walletAddress,
   availableBalance,
   positionShares,
   onAmountChange,
   onTokenChange,
   onModeChange,
-  onCavopayPinChange,
+  onCavoPinChange,
   onConfirmPinChange,
   onSecurityAnswerOneChange,
   onSecurityAnswerTwoChange,
@@ -93,7 +93,7 @@ export default function EarnModal({
   const shareSymbol = mode === 'deposit'
     ? earnToken === 'USDC' ? 'alvUSDC' : 'alvEURC'
     : earnToken
-  const isCreatingPin = !hasCavopayPin
+  const isCreatingPin = !hasCavoPin
   const amountNumber = Number(earnAmount)
   const sharePrice = vault?.sharePrice && vault.sharePrice > 0 ? vault.sharePrice : 1
   const estimatedShares = mode === 'deposit'
@@ -114,14 +114,14 @@ export default function EarnModal({
     && Number.isFinite(amountNumber) && amountNumber > positionShares
   const canReview = Number.isFinite(amountNumber) && amountNumber > 0
     && !!walletAddress && !overBalance && !overShares && !depositsBlocked
-  const canSubmitPin = cavopayPin.length === 4 && (
-    hasCavopayPin || (confirmPin.length === 4 && securityAnswerOne.trim() && securityAnswerTwo.trim())
+  const canSubmitPin = cavoPin.length === 4 && (
+    hasCavoPin || (confirmPin.length === 4 && securityAnswerOne.trim() && securityAnswerTwo.trim())
   )
   const title = earnStep === 'details'
     ? mode === 'deposit' ? 'Deposit to Earn' : 'Withdraw from Earn'
     : earnStep === 'processing'
       ? mode === 'deposit' ? 'Deposit Submitted' : 'Withdrawal Submitted'
-      : hasCavopayPin ? 'Enter Payment PIN' : 'Create Payment PIN'
+      : hasCavoPin ? 'Enter Payment PIN' : 'Create Payment PIN'
   const apyLabel = vault?.apy != null
     ? `${(vault.apy * 100).toFixed(2)}% APY`
     : 'APY calibrating…'
@@ -142,8 +142,8 @@ export default function EarnModal({
               : 'Burn vault shares and get your stablecoins back plus accrued yield.'
             : earnStep === 'processing'
               ? 'Your earn transaction is on its way. The receipt will appear after network confirmation.'
-              : hasCavopayPin
-                ? 'Approve this exact earn transaction. Your PIN is verified securely by Cavopay.'
+              : hasCavoPin
+                ? 'Approve this exact earn transaction. Your PIN is verified securely by Cavo.'
                 : 'Create a 4-digit Payment PIN. You will use it to approve everyday actions.'}
         </div>
 
@@ -290,9 +290,9 @@ export default function EarnModal({
             ) : (
               <>
                 <PinDotsInput
-                  label={hasCavopayPin ? 'Payment PIN' : 'New Payment PIN'}
-                  value={cavopayPin}
-                  onChange={onCavopayPinChange}
+                  label={hasCavoPin ? 'Payment PIN' : 'New Payment PIN'}
+                  value={cavoPin}
+                  onChange={onCavoPinChange}
                   disabled={isEarning}
                 />
 
@@ -305,7 +305,7 @@ export default function EarnModal({
                       disabled={isEarning}
                     />
                     <div className="form-group">
-                      <label className="form-label">{CAVOPAY_SECURITY_QUESTIONS[0]}</label>
+                      <label className="form-label">{CAVO_SECURITY_QUESTIONS[0]}</label>
                       <input
                         className="form-input"
                         placeholder="Your answer"
@@ -315,7 +315,7 @@ export default function EarnModal({
                       />
                     </div>
                     <div className="form-group">
-                      <label className="form-label">{CAVOPAY_SECURITY_QUESTIONS[1]}</label>
+                      <label className="form-label">{CAVO_SECURITY_QUESTIONS[1]}</label>
                       <input
                         className="form-input"
                         placeholder="Answer"
@@ -336,7 +336,7 @@ export default function EarnModal({
                 >
                   {isEarning
                     ? mode === 'deposit' ? 'Depositing...' : 'Withdrawing...'
-                    : hasCavopayPin
+                    : hasCavoPin
                       ? mode === 'deposit' ? 'Approve and Deposit' : 'Approve and Withdraw'
                       : mode === 'deposit' ? 'Create PIN and Deposit' : 'Create PIN and Withdraw'}
                 </button>

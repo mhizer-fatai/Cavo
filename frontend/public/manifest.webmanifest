@@ -1,6 +1,6 @@
 {
-  "name": "Cavopay — Stablecoin Banking",
-  "short_name": "Cavopay",
+  "name": "Cavo — Stablecoin Banking",
+  "short_name": "Cavo",
   "description": "The fastest way to send and receive USDC and EURC on the Arc network.",
   "start_url": "/dashboard",
   "display": "standalone",
@@ -8,7 +8,7 @@
   "theme_color": "#6366f1",
   "icons": [
     {
-      "src": "/cavopay-logo.png",
+      "src": "/cavo-logo.png",
       "sizes": "1024x1024",
       "type": "image/png"
     }

@@ -1,6 +1,6 @@
 const express = require("express");
 const { supabase, memStore } = require("../supabase");
-const { requireCavopaySession } = require("../services/sessions");
+const { requireCavoSession } = require("../services/sessions");
 const { schemas, validateBody } = require("../middleware/validate");
 
 const router = express.Router();
@@ -8,7 +8,7 @@ const router = express.Router();
 const RESERVED_USERNAMES = [
   "dashboard", "pay", "home", "api", "login", "logout", "signup",
   "register", "settings", "profile", "user", "auth", "app", "dev",
-  "test", "admin", "administrator", "support", "help", "cavopay",
+  "test", "admin", "administrator", "support", "help", "cavo",
   "system", "root", "staff", "moderator", "billing", "security",
   "official", "team", "contact", "usdc", "eurc", "circle", "arc",
   "network", "wallet", "contract", "token", "checkout", "invoice",
@@ -100,7 +100,7 @@ function isValidAvatarUrl(value) {
   return /^data:image\/(png|jpe?g|webp);base64,[a-zA-Z0-9+/=]+$/.test(value);
 }
 
-router.post("/", requireCavopaySession, validateBody(schemas.profileCreate), async (req, res) => {
+router.post("/", requireCavoSession, validateBody(schemas.profileCreate), async (req, res) => {
   try {
     let { username, walletAddress } = req.body;
 
@@ -113,7 +113,7 @@ router.post("/", requireCavopaySession, validateBody(schemas.profileCreate), asy
 
     // ─── Wallet address format check ──────────────────────────────────────────
     if (!isValidOwnerKey(walletAddress)) {
-      return res.status(400).json({ error: "Invalid Cavopay account identity format" });
+      return res.status(400).json({ error: "Invalid Cavo account identity format" });
     }
 
 
@@ -127,9 +127,9 @@ router.post("/", requireCavopaySession, validateBody(schemas.profileCreate), asy
 
     const ownerAddress = walletAddress;
     if (req.authUserKey !== ownerAddress) {
-      return res.status(403).json({ error: "Cavopay session does not match this account" });
+      return res.status(403).json({ error: "Cavo session does not match this account" });
     }
-    let cavopayWalletAddress = walletAddress;
+    let cavoWalletAddress = walletAddress;
 
     if (useSupabase) {
       await refreshProfileSchema();
@@ -137,14 +137,14 @@ router.post("/", requireCavopaySession, validateBody(schemas.profileCreate), asy
       const circleWallet = await findCircleWalletForOwner(ownerAddress);
 
       if (circleWallet?.wallet_address) {
-        cavopayWalletAddress = circleWallet.wallet_address.toLowerCase();
+        cavoWalletAddress = circleWallet.wallet_address.toLowerCase();
       }
     }
 
     const createdAt = new Date().toISOString();
     const record = hasOwnerAddress
-      ? { username, owner_address: ownerAddress, wallet_address: cavopayWalletAddress, created_at: createdAt }
-      : { username, wallet_address: cavopayWalletAddress, created_at: createdAt };
+      ? { username, owner_address: ownerAddress, wallet_address: cavoWalletAddress, created_at: createdAt }
+      : { username, wallet_address: cavoWalletAddress, created_at: createdAt };
 
     if (useSupabase) {
       // Check if this wallet already has a username
@@ -210,7 +210,7 @@ router.post("/", requireCavopaySession, validateBody(schemas.profileCreate), asy
 
 // ─── GET /api/profiles/wallet/:walletAddress — Lookup by wallet ───────────────
 // IMPORTANT: This route must be defined BEFORE /:username to avoid routing conflicts
-router.patch("/:username/avatar", requireCavopaySession, validateBody(schemas.profileAvatar), async (req, res) => {
+router.patch("/:username/avatar", requireCavoSession, validateBody(schemas.profileAvatar), async (req, res) => {
   try {
     const username = req.params.username.toLowerCase().trim();
     const avatarUrl = req.body?.avatarUrl ?? req.body?.avatar_url ?? null;
@@ -231,7 +231,7 @@ router.patch("/:username/avatar", requireCavopaySession, validateBody(schemas.pr
       if (lookupErr) throw lookupErr;
       if (!existingProfile) return res.status(404).json({ error: "Profile not found" });
       if (existingProfile.owner_address !== req.authUserKey) {
-        return res.status(403).json({ error: "Cavopay session does not own this profile" });
+        return res.status(403).json({ error: "Cavo session does not own this profile" });
       }
 
       const { data, error } = await supabase
@@ -248,7 +248,7 @@ router.patch("/:username/avatar", requireCavopaySession, validateBody(schemas.pr
     const record = memStore.profiles.get(username);
     if (!record) return res.status(404).json({ error: "Profile not found" });
     if (record.owner_address !== req.authUserKey) {
-      return res.status(403).json({ error: "Cavopay session does not own this profile" });
+      return res.status(403).json({ error: "Cavo session does not own this profile" });
     }
     const nextRecord = { ...record, avatar_url: avatarUrl || null };
     memStore.profiles.set(username, nextRecord);

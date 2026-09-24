@@ -6,7 +6,7 @@ import { AlertCircle, Check, CheckCircle2, Copy, ExternalLink, RefreshCw, Shield
 import { getProfile, getTokenTransfers, logPayment, type Profile } from '../lib/api'
 import PaymentWalletButton from '../components/PaymentWalletButton'
 import PaymentSuccessCelebration from '../components/PaymentSuccessCelebration'
-import { ARC_TESTNET_CHAIN, CAVOPAYNT_SOURCE_CHAINS, TOKENS, arcTestnet, getPaymentSourceChain, type PaymentSourceChain } from '../lib/config'
+import { ARC_TESTNET_CHAIN, PAYMENT_SOURCE_CHAINS, TOKENS, arcTestnet, getPaymentSourceChain, type PaymentSourceChain } from '../lib/config'
 import { ERC20_ABI } from '../lib/contracts'
 import { ensureWalletChain, waitForHash } from '../lib/transactions'
 import { bridgePaymentToArc } from '../lib/bridge'
@@ -214,15 +214,15 @@ export default function ProfilePage() {
         <div className="checkout-card-pro">
           <div className="checkout-topbar">
             <Link to="/" className="checkout-brand">
-              <img src="/cavopay-logo.png" alt="Cavopay" />
-              <span>Cavopay</span>
+              <img src="/cavo-logo.png" alt="Cavo" />
+              <span>Cavo</span>
             </Link>
             <PaymentWalletButton />
           </div>
 
           <div className="checkout-hero">
             <div>
-              <span className="checkout-kicker">Cavopay profile</span>
+              <span className="checkout-kicker">Cavo profile</span>
               <h1>Pay @{profile.username}</h1>
               <p>Enter the amount, choose the token and network, then approve the wallet transaction.</p>
             </div>
@@ -284,7 +284,7 @@ export default function ProfilePage() {
             <div className="form-group">
               <label className="form-label">Pay from network</label>
               <select className="form-input" value={sourceChain} disabled={tokenSymbol === 'EURC'} onChange={event => setSourceChain(event.target.value as PaymentSourceChain)}>
-                {CAVOPAYNT_SOURCE_CHAINS.map(chain => <option key={chain.value} value={chain.value}>{chain.label}</option>)}
+                {PAYMENT_SOURCE_CHAINS.map(chain => <option key={chain.value} value={chain.value}>{chain.label}</option>)}
               </select>
               <p className="checkout-helper">{tokenSymbol === 'EURC' ? 'EURC is Arc-only right now.' : 'Recipient settles on Arc Testnet.'}</p>
             </div>
@@ -315,7 +315,7 @@ export default function ProfilePage() {
 
             <div className="checkout-security-note">
               <ShieldCheck size={15} />
-              <span>Secured with wallet approval. Cavopay never asks for your wallet seed phrase.</span>
+              <span>Secured with wallet approval. Cavo never asks for your wallet seed phrase.</span>
             </div>
           </div>
         </div>

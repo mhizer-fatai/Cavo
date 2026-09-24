@@ -1,6 +1,6 @@
 import { BACKEND_URL } from './config'
 
-const AUTH_STORAGE_KEY = 'cavopay.authUser'
+const AUTH_STORAGE_KEY = 'cavo.authUser'
 
 // Access token lives in memory only (M3): localStorage is readable by any
 // script on the page, so a stored token turns any XSS into session theft.
@@ -12,8 +12,8 @@ export function setMemorySessionToken(token: string | null) {
 }
 
 type StoredAuthUser = {
-  cavopaySessionToken?: string
-  cavopaySessionExpiresAt?: string
+  cavoSessionToken?: string
+  cavoSessionExpiresAt?: string
   userKey?: string
   [key: string]: unknown
 }
@@ -33,10 +33,10 @@ function storeRefreshedSessionToken(token: string, expiresAt: string) {
   try {
     const user = readStoredAuthUser()
     if (!user) return
-    const { cavopaySessionToken: _dropped, ...rest } = user as StoredAuthUser & { cavopaySessionToken?: unknown }
+    const { cavoSessionToken: _dropped, ...rest } = user as StoredAuthUser & { cavoSessionToken?: unknown }
     localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({
       ...rest,
-      cavopaySessionExpiresAt: expiresAt,
+      cavoSessionExpiresAt: expiresAt,
     }))
   } catch {
     // Storage failures must not break the request flow.
@@ -44,7 +44,7 @@ function storeRefreshedSessionToken(token: string, expiresAt: string) {
 }
 
 function dispatchSessionExpired() {
-  window.dispatchEvent(new CustomEvent('cavopay:session-expired'))
+  window.dispatchEvent(new CustomEvent('cavo:session-expired'))
 }
 
 // Single-flight refresh: concurrent 401s share one rotation request.
@@ -111,14 +111,14 @@ async function apiFetch(path: string, init?: RequestInit, timeoutMs = 12000, ret
   }
 }
 
-function getStoredCavopaySessionToken() {
+function getStoredCavoSessionToken() {
   if (memorySessionToken) return memorySessionToken
   // Fallback for sessions established before the memory-only change.
-  return readStoredAuthUser()?.cavopaySessionToken ?? null
+  return readStoredAuthUser()?.cavoSessionToken ?? null
 }
 
 function authHeaders(extra?: HeadersInit): HeadersInit {
-  const token = getStoredCavopaySessionToken()
+  const token = getStoredCavoSessionToken()
   return {
     ...(extra || {}),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -313,7 +313,7 @@ export async function getTokenTransfers(address: string, contractAddress: string
   }
 }
 
-// Cavopay profile endpoints.
+// Cavo profile endpoints.
 
 export async function claimProfile(payload: { username: string; walletAddress: string }): Promise<Profile> {
   const res = await apiFetch('/profiles', {
@@ -467,7 +467,7 @@ export async function getWalletTransactionStatus(trackingId: string): Promise<Wa
   return data
 }
 
-export async function requestCavopayEmailCode(email: string): Promise<{
+export async function requestCavoEmailCode(email: string): Promise<{
   ok: boolean
   email: string
   expiresAt: string
@@ -485,7 +485,7 @@ export async function requestCavopayEmailCode(email: string): Promise<{
   return res.json()
 }
 
-export async function verifyCavopayEmailCode(payload: { email: string; code: string }): Promise<{
+export async function verifyCavoEmailCode(payload: { email: string; code: string }): Promise<{
   authProvider: 'email'
   providerUserId: string
   email: string
@@ -509,7 +509,7 @@ export async function verifyCavopayEmailCode(payload: { email: string; code: str
 // Session creation is gated server-side: pass a single-use loginTicket
 // (issued by email OTP verification) or a Google credential (verified
 // server-side via Google tokeninfo). Client-declared identity alone is rejected.
-export async function createCavopaySession(payload: {
+export async function createCavoSession(payload: {
   loginTicket?: string
   userToken?: string
   displayName?: string
@@ -522,12 +522,12 @@ export async function createCavopaySession(payload: {
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    throw new Error((err as any).error || 'Failed to create Cavopay session')
+    throw new Error((err as any).error || 'Failed to create Cavo session')
   }
   return res.json()
 }
 
-export async function refreshCavopaySession(): Promise<{ token: string; expiresAt: string; userKey: string; sessionId: string }> {
+export async function refreshCavoSession(): Promise<{ token: string; expiresAt: string; userKey: string; sessionId: string }> {
   const res = await apiFetch('/auth/refresh', {
     method: 'POST',
     credentials: 'include',
@@ -539,7 +539,7 @@ export async function refreshCavopaySession(): Promise<{ token: string; expiresA
   return res.json()
 }
 
-export async function logoutCavopaySession(): Promise<void> {
+export async function logoutCavoSession(): Promise<void> {
   try {
     await apiFetch('/auth/logout', {
       method: 'POST',
@@ -551,57 +551,57 @@ export async function logoutCavopaySession(): Promise<void> {
   }
 }
 
-export async function getCavopayPinStatus(userKey: string): Promise<{ hasPin: boolean; hasRecoveryQuestion?: boolean; recoveryQuestion?: string | null; recoveryQuestions?: string[] }> {
-  const res = await apiFetch(`/cavopay-pin/status?userKey=${encodeURIComponent(userKey.toLowerCase())}`, {
+export async function getCavoPinStatus(userKey: string): Promise<{ hasPin: boolean; hasRecoveryQuestion?: boolean; recoveryQuestion?: string | null; recoveryQuestions?: string[] }> {
+  const res = await apiFetch(`/cavo-pin/status?userKey=${encodeURIComponent(userKey.toLowerCase())}`, {
     headers: authHeaders(),
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    throw new Error((err as any).error || 'Failed to fetch Cavopay PIN status')
+    throw new Error((err as any).error || 'Failed to fetch Cavo PIN status')
   }
   return res.json()
 }
 
-export async function setupCavopayPin(payload: {
+export async function setupCavoPin(payload: {
   userKey: string
   pin: string
   recoveryAnswers: string[]
 }): Promise<{ hasPin: boolean }> {
-  const res = await apiFetch('/cavopay-pin/setup', {
+  const res = await apiFetch('/cavo-pin/setup', {
     method: 'POST',
     headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(payload),
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    throw new Error((err as any).error || 'Failed to set Cavopay PIN')
+    throw new Error((err as any).error || 'Failed to set Cavo PIN')
   }
   return res.json()
 }
 
-export async function changeCavopayPin(payload: {
+export async function changeCavoPin(payload: {
   userKey: string
   currentPin: string
   newPin: string
 }): Promise<{ ok: boolean }> {
-  const res = await apiFetch('/cavopay-pin/change', {
+  const res = await apiFetch('/cavo-pin/change', {
     method: 'POST',
     headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(payload),
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    throw new Error((err as any).error || 'Failed to change Cavopay PIN')
+    throw new Error((err as any).error || 'Failed to change Cavo PIN')
   }
   return res.json()
 }
 
-export async function setCavopayPinRecoveryQuestion(payload: {
+export async function setCavoPinRecoveryQuestion(payload: {
   userKey: string
   pin: string
   recoveryAnswers: string[]
 }): Promise<{ ok: boolean; hasRecoveryQuestion: boolean; recoveryQuestion: string; recoveryQuestions?: string[] }> {
-  const res = await apiFetch('/cavopay-pin/recovery-question', {
+  const res = await apiFetch('/cavo-pin/recovery-question', {
     method: 'POST',
     headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(payload),
@@ -613,24 +613,24 @@ export async function setCavopayPinRecoveryQuestion(payload: {
   return res.json()
 }
 
-export async function recoverCavopayPin(payload: {
+export async function recoverCavoPin(payload: {
   userKey: string
   recoveryAnswers: string[]
   newPin: string
 }): Promise<{ ok: boolean }> {
-  const res = await apiFetch('/cavopay-pin/recover', {
+  const res = await apiFetch('/cavo-pin/recover', {
     method: 'POST',
     headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(payload),
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    throw new Error((err as any).error || 'Failed to recover Cavopay PIN')
+    throw new Error((err as any).error || 'Failed to recover Cavo PIN')
   }
   return res.json()
 }
 
-export async function approveCavopayPinTransaction(payload: {
+export async function approveCavoPinTransaction(payload: {
   userKey: string
   pin: string
   walletAddress: string
@@ -642,7 +642,7 @@ export async function approveCavopayPinTransaction(payload: {
   tokenOut?: 'USDC' | 'EURC'
   transactionType?: 'send' | 'swap' | 'earn'
 }): Promise<{ approvalId: string; expiresAt: string }> {
-  const res = await apiFetch('/cavopay-pin/approve', {
+  const res = await apiFetch('/cavo-pin/approve', {
     method: 'POST',
     headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(payload),

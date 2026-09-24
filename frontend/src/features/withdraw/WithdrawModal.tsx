@@ -1,6 +1,6 @@
 import { X } from 'lucide-react'
 import PinDotsInput from '../../components/PinDotsInput'
-import { CAVOPAY_SECURITY_QUESTIONS, CCTP_WITHDRAW_CHAINS, isValidWithdrawAddress } from '../../lib/config'
+import { CAVO_SECURITY_QUESTIONS, CCTP_WITHDRAW_CHAINS, isValidWithdrawAddress } from '../../lib/config'
 
 export type WithdrawStep = 'details' | 'pin' | 'processing'
 
@@ -11,17 +11,17 @@ type WithdrawModalProps = {
   withdrawAmount: string
   withdrawError: string | null
   isWithdrawing: boolean
-  cavopayPin: string
+  cavoPin: string
   confirmPin: string
   securityAnswerOne: string
   securityAnswerTwo: string
-  hasCavopayPin: boolean | null
+  hasCavoPin: boolean | null
   walletAddress: string
   availableBalance: string
   onAddressChange: (value: string) => void
   onChainChange: (value: string) => void
   onAmountChange: (value: string) => void
-  onCavopayPinChange: (value: string) => void
+  onCavoPinChange: (value: string) => void
   onConfirmPinChange: (value: string) => void
   onSecurityAnswerOneChange: (value: string) => void
   onSecurityAnswerTwoChange: (value: string) => void
@@ -40,17 +40,17 @@ export default function WithdrawModal({
   withdrawAmount,
   withdrawError,
   isWithdrawing,
-  cavopayPin,
+  cavoPin,
   confirmPin,
   securityAnswerOne,
   securityAnswerTwo,
-  hasCavopayPin,
+  hasCavoPin,
   walletAddress,
   availableBalance,
   onAddressChange,
   onChainChange,
   onAmountChange,
-  onCavopayPinChange,
+  onCavoPinChange,
   onConfirmPinChange,
   onSecurityAnswerOneChange,
   onSecurityAnswerTwoChange,
@@ -61,9 +61,9 @@ export default function WithdrawModal({
   getChainLabel,
   shortenAddress,
 }: WithdrawModalProps) {
-  const isCreatingPin = !hasCavopayPin
-  const canSubmitPin = cavopayPin.length === 4 && (
-    hasCavopayPin || (confirmPin.length === 4 && securityAnswerOne.trim() && securityAnswerTwo.trim())
+  const isCreatingPin = !hasCavoPin
+  const canSubmitPin = cavoPin.length === 4 && (
+    hasCavoPin || (confirmPin.length === 4 && securityAnswerOne.trim() && securityAnswerTwo.trim())
   )
   const amountNumber = Number(withdrawAmount)
   const balanceNumber = Number(availableBalance)
@@ -79,7 +79,7 @@ export default function WithdrawModal({
     <div className="wc-modal" onClick={onClose}>
       <div className="card glass wc-card send-card" onClick={event => event.stopPropagation()}>
         <div className="wc-title modal-title-row">
-          {withdrawStep === 'details' ? 'Withdraw' : withdrawStep === 'processing' ? 'Withdrawal Submitted' : hasCavopayPin ? 'Enter Payment PIN' : 'Create Payment PIN'}
+          {withdrawStep === 'details' ? 'Withdraw' : withdrawStep === 'processing' ? 'Withdrawal Submitted' : hasCavoPin ? 'Enter Payment PIN' : 'Create Payment PIN'}
           <button className="icon-btn" onClick={onClose} aria-label="Close withdraw">
             <X size={20} />
           </button>
@@ -89,8 +89,8 @@ export default function WithdrawModal({
             ? 'Withdraw USDC to any address on Arc or any CCTP-supported chain.'
             : withdrawStep === 'processing'
               ? 'Your withdrawal is on its way. The receipt will appear after network confirmation.'
-              : hasCavopayPin
-                ? 'Approve this exact withdrawal. Your PIN is verified securely by Cavopay.'
+              : hasCavoPin
+                ? 'Approve this exact withdrawal. Your PIN is verified securely by Cavo.'
                 : 'Create a 4-digit Payment PIN. You will use it to approve everyday actions.'}
         </div>
 
@@ -185,9 +185,9 @@ export default function WithdrawModal({
             ) : (
               <>
                 <PinDotsInput
-                  label={hasCavopayPin ? 'Payment PIN' : 'New Payment PIN'}
-                  value={cavopayPin}
-                  onChange={onCavopayPinChange}
+                  label={hasCavoPin ? 'Payment PIN' : 'New Payment PIN'}
+                  value={cavoPin}
+                  onChange={onCavoPinChange}
                   disabled={isWithdrawing}
                 />
 
@@ -200,7 +200,7 @@ export default function WithdrawModal({
                       disabled={isWithdrawing}
                     />
                     <div className="form-group">
-                      <label className="form-label">{CAVOPAY_SECURITY_QUESTIONS[0]}</label>
+                      <label className="form-label">{CAVO_SECURITY_QUESTIONS[0]}</label>
                       <input
                         className="form-input"
                         placeholder="Your answer"
@@ -210,7 +210,7 @@ export default function WithdrawModal({
                       />
                     </div>
                     <div className="form-group">
-                      <label className="form-label">{CAVOPAY_SECURITY_QUESTIONS[1]}</label>
+                      <label className="form-label">{CAVO_SECURITY_QUESTIONS[1]}</label>
                       <input
                         className="form-input"
                         placeholder="Answer"
@@ -229,7 +229,7 @@ export default function WithdrawModal({
                   disabled={isWithdrawing || !canSubmitPin}
                   className="btn btn-primary btn-full send-submit-btn"
                 >
-                  {isWithdrawing ? 'Withdrawing...' : hasCavopayPin ? 'Approve and Withdraw' : 'Create PIN and Withdraw'}
+                  {isWithdrawing ? 'Withdrawing...' : hasCavoPin ? 'Approve and Withdraw' : 'Create PIN and Withdraw'}
                 </button>
                 <button onClick={onBackToDetails} disabled={isWithdrawing} className="btn btn-secondary btn-full">
                   Back

@@ -7,7 +7,7 @@ const {
   createLoginTicket,
   consumeLoginTicket,
   verifyGoogleCredential,
-  requireCavopaySession,
+  requireCavoSession,
   revokeSessionFamily,
   revokeAllUserSessions,
   revokeJti,
@@ -66,7 +66,7 @@ function audit(req, action, outcome, extra = {}) {
 
 router.post("/email/token", async (req, res) => {
   return res.status(410).json({
-    error: "Circle email login has been retired. Cavopay email code login is coming soon.",
+    error: "Circle email login has been retired. Cavo email code login is coming soon.",
   });
 });
 
@@ -152,9 +152,9 @@ router.post("/session", validateBody(schemas.authSession), async (req, res) => {
     });
   } catch (err) {
     audit(req, "auth.session_create", "fail", { detail: { reason: err.message } });
-    console.error("Cavopay session error:", err.message || err);
+    console.error("Cavo session error:", err.message || err);
     return res.status(err.status || 500).json({
-      error: err.message || "Failed to create Cavopay session",
+      error: err.message || "Failed to create Cavo session",
     });
   }
 });
@@ -184,9 +184,9 @@ router.post("/refresh", async (req, res) => {
   }
 });
 
-router.post("/logout", requireCavopaySession, async (req, res) => {
+router.post("/logout", requireCavoSession, async (req, res) => {
   try {
-    const session = req.cavopaySession;
+    const session = req.cavoSession;
     await revokeSessionFamily(session.sid);
     await revokeJti(session.jti, "logout", session.exp * 1000);
     clearRefreshCookie(res);
@@ -198,8 +198,8 @@ router.post("/logout", requireCavopaySession, async (req, res) => {
   }
 });
 
-router.get("/me", requireCavopaySession, async (req, res) => {
-  const session = req.cavopaySession;
+router.get("/me", requireCavoSession, async (req, res) => {
+  const session = req.cavoSession;
   return res.json({
     userKey: req.authUserKey,
     email: session.email,
@@ -209,7 +209,7 @@ router.get("/me", requireCavopaySession, async (req, res) => {
   });
 });
 
-router.get("/sessions", requireCavopaySession, async (req, res) => {
+router.get("/sessions", requireCavoSession, async (req, res) => {
   try {
     return res.json({ sessions: await listUserSessions(req.authUserKey) });
   } catch (err) {
@@ -218,7 +218,7 @@ router.get("/sessions", requireCavopaySession, async (req, res) => {
   }
 });
 
-router.delete("/sessions/:sid", requireCavopaySession, async (req, res) => {
+router.delete("/sessions/:sid", requireCavoSession, async (req, res) => {
   try {
     const owned = await listUserSessions(req.authUserKey);
     if (!owned.some((entry) => entry.sessionId === req.params.sid)) {
@@ -237,7 +237,7 @@ router.delete("/sessions/:sid", requireCavopaySession, async (req, res) => {
 });
 
 // Danger zone: revoke every session for this account (account recovery).
-router.post("/revoke-all", requireCavopaySession, async (req, res) => {
+router.post("/revoke-all", requireCavoSession, async (req, res) => {
   try {
     await revokeAllUserSessions(req.authUserKey);
     clearRefreshCookie(res);

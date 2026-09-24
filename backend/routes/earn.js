@@ -1,7 +1,7 @@
 const express = require("express");
 const crypto = require("crypto");
 const router = express.Router();
-const { requireMatchingUserKey, requireCavopaySession } = require("../services/sessions");
+const { requireMatchingUserKey, requireCavoSession } = require("../services/sessions");
 const { idempotencyGuard } = require("../middleware/idempotency");
 const { schemas, validateBody } = require("../middleware/validate");
 const { consumeApproval } = require("../services/pins");
@@ -11,7 +11,7 @@ const earnService = require("../services/earn");
 async function requireOwnWallet(userKey, walletAddress, walletId) {
   const wallet = await getWalletForUser(userKey);
   if (!wallet || wallet.circle_wallet_id !== walletId || wallet.wallet_address !== walletAddress) {
-    throw Object.assign(new Error("Wallet does not belong to this Cavopay account"), { status: 403 });
+    throw Object.assign(new Error("Wallet does not belong to this Cavo account"), { status: 403 });
   }
   return wallet;
 }
@@ -27,7 +27,7 @@ router.get("/vaults", async (req, res) => {
   }
 });
 
-router.get("/positions", requireCavopaySession, requireMatchingUserKey, async (req, res) => {
+router.get("/positions", requireCavoSession, requireMatchingUserKey, async (req, res) => {
   try {
     const userKey = req.authUserKey;
     const positions = await earnService.getPositions(userKey);
@@ -55,7 +55,7 @@ router.get("/positions", requireCavopaySession, requireMatchingUserKey, async (r
   }
 });
 
-router.get("/history", requireCavopaySession, requireMatchingUserKey, async (req, res) => {
+router.get("/history", requireCavoSession, requireMatchingUserKey, async (req, res) => {
   try {
     const userKey = req.authUserKey;
     const events = await earnService.listEvents(userKey);
@@ -66,7 +66,7 @@ router.get("/history", requireCavopaySession, requireMatchingUserKey, async (req
   }
 });
 
-router.post("/deposit", requireCavopaySession, requireMatchingUserKey, validateBody(schemas.earnDeposit), idempotencyGuard, async (req, res) => {
+router.post("/deposit", requireCavoSession, requireMatchingUserKey, validateBody(schemas.earnDeposit), idempotencyGuard, async (req, res) => {
   const userKey = req.authUserKey;
   const walletAddress = String(req.body.walletAddress || "").toLowerCase().trim();
   const walletId = String(req.body.walletId || "").trim();
@@ -128,7 +128,7 @@ router.post("/deposit", requireCavopaySession, requireMatchingUserKey, validateB
   }
 });
 
-router.post("/withdraw", requireCavopaySession, requireMatchingUserKey, validateBody(schemas.earnWithdraw), idempotencyGuard, async (req, res) => {
+router.post("/withdraw", requireCavoSession, requireMatchingUserKey, validateBody(schemas.earnWithdraw), idempotencyGuard, async (req, res) => {
   const userKey = req.authUserKey;
   const walletAddress = String(req.body.walletAddress || "").toLowerCase().trim();
   const walletId = String(req.body.walletId || "").trim();

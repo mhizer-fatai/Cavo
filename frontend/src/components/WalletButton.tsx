@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
-import { useCavopayAuth } from '../context/AuthContext'
+import { useCavoAuth } from '../context/AuthContext'
 import { loginWithGoogle } from '../lib/google'
 import { circleUserIdFromUserKey } from '../lib/identity'
-import { createCavopaySession, getDeveloperControlledWallet, requestCavopayEmailCode, verifyCavopayEmailCode } from '../lib/api'
+import { createCavoSession, getDeveloperControlledWallet, requestCavoEmailCode, verifyCavoEmailCode } from '../lib/api'
 import { Copy, LogOut, Mail } from 'lucide-react'
 
 interface Props {
@@ -14,7 +14,7 @@ interface Props {
 }
 
 export default function WalletButton({ className = '', username }: Props) {
-  const { user, setUser, logout } = useCavopayAuth()
+  const { user, setUser, logout } = useCavoAuth()
   const navigate = useNavigate()
   const [showModal, setShowModal] = useState(false)
   const [loginStep, setLoginStep] = useState<'methods' | 'email'>('methods')
@@ -54,7 +54,7 @@ export default function WalletButton({ className = '', username }: Props) {
     setEmailLoading(true)
     setLoginError(null)
     try {
-      const result = await requestCavopayEmailCode(normalizedEmail)
+      const result = await requestCavoEmailCode(normalizedEmail)
       setEmailCode('')
       setEmailCodeSentTo(result.email)
       setEmailCooldown(result.cooldownSeconds || 60)
@@ -71,15 +71,15 @@ export default function WalletButton({ className = '', username }: Props) {
     setEmailLoading(true)
     setLoginError(null)
     try {
-      const result = await verifyCavopayEmailCode({ email: normalizedEmail, code: emailCode })
+      const result = await verifyCavoEmailCode({ email: normalizedEmail, code: emailCode })
       setUser({
         authProvider: 'email',
         providerUserId: result.providerUserId,
         userKey: result.userKey,
         email: result.email,
         circleUserId: circleUserIdFromUserKey(result.userKey),
-        cavopaySessionToken: result.session.token,
-        cavopaySessionExpiresAt: result.session.expiresAt,
+        cavoSessionToken: result.session.token,
+        cavoSessionExpiresAt: result.session.expiresAt,
       })
       finishLogin()
     } catch (err: any) {
@@ -89,7 +89,7 @@ export default function WalletButton({ className = '', username }: Props) {
     }
   }
 
-  const walletStorageKey = user ? `cavopay.walletAddress:${user.userKey}` : 'cavopay.walletAddress'
+  const walletStorageKey = user ? `cavo.walletAddress:${user.userKey}` : 'cavo.walletAddress'
 
   const refreshWalletAddress = async () => {
     if (!user) return null
@@ -107,16 +107,16 @@ export default function WalletButton({ className = '', username }: Props) {
     return null
   }
 
-  // Fetch the Cavopay wallet address when user logs in or opens the dropdown
+  // Fetch the Cavo wallet address when user logs in or opens the dropdown
   useEffect(() => {
     if (!user) return
     refreshWalletAddress().catch(console.error)
-  }, [user?.userKey, user?.cavopaySessionToken])
+  }, [user?.userKey, user?.cavoSessionToken])
 
   useEffect(() => {
     if (!showDropdown || !user || walletAddress) return
     refreshWalletAddress().catch(console.error)
-  }, [showDropdown, user?.userKey, user?.cavopaySessionToken, walletAddress])
+  }, [showDropdown, user?.userKey, user?.cavoSessionToken, walletAddress])
 
   useEffect(() => {
     const handleWalletAddressUpdate = (event: Event) => {
@@ -125,11 +125,11 @@ export default function WalletButton({ className = '', username }: Props) {
       setWalletAddress(detail.walletAddress)
       localStorage.setItem(walletStorageKey, detail.walletAddress)
     }
-    window.addEventListener('cavopay:wallet-address-updated', handleWalletAddressUpdate as EventListener)
-    return () => window.removeEventListener('cavopay:wallet-address-updated', handleWalletAddressUpdate as EventListener)
+    window.addEventListener('cavo:wallet-address-updated', handleWalletAddressUpdate as EventListener)
+    return () => window.removeEventListener('cavo:wallet-address-updated', handleWalletAddressUpdate as EventListener)
   }, [user?.userKey, walletStorageKey])
 
-  // Reset cached Cavopay wallet address on sign out.
+  // Reset cached Cavo wallet address on sign out.
   useEffect(() => {
     if (!user) {
       setWalletAddress(null)
@@ -222,7 +222,7 @@ export default function WalletButton({ className = '', username }: Props) {
   return (
     <>
       <button
-        id="cavopay-login-btn"
+        id="cavo-login-btn"
         className={`btn btn-primary btn-sm ${className}`}
         onClick={() => {
           setLoginStep('methods')
@@ -242,8 +242,8 @@ export default function WalletButton({ className = '', username }: Props) {
               {loginStep === 'email'
                 ? emailCodeSentTo
                   ? `Enter the 6-digit code sent to ${emailCodeSentTo}.`
-                  : 'Enter your email and Cavopay will send a 6-digit login code.'
-                : 'Use Google or a Cavopay email code to access your dashboard.'}
+                  : 'Enter your email and Cavo will send a 6-digit login code.'
+                : 'Use Google or a Cavo email code to access your dashboard.'}
             </p>
 
             {loginStep === 'methods' && (
@@ -258,7 +258,7 @@ export default function WalletButton({ className = '', username }: Props) {
                   setGoogleLoading(false)
                 }, 45000)
                 try {
-                  window.addEventListener('cavopay:google-login-complete', ((event: Event) => {
+                  window.addEventListener('cavo:google-login-complete', ((event: Event) => {
                     window.clearTimeout(loginWatchdog)
                     const detail = (event as CustomEvent).detail
                     if (detail?.error) {
@@ -280,7 +280,7 @@ export default function WalletButton({ className = '', username }: Props) {
                       setGoogleLoading(false)
                       return
                     }
-                    createCavopaySession({
+                    createCavoSession({
                       userToken: result.userToken,
                       displayName: result?.oAuthInfo?.socialUserInfo?.name,
                     }).then((session) => {
@@ -294,12 +294,12 @@ export default function WalletButton({ className = '', username }: Props) {
                         userToken: result.userToken,
                         encryptionKey: result.encryptionKey,
                         refreshToken: result.refreshToken,
-                        cavopaySessionToken: session.token,
-                        cavopaySessionExpiresAt: session.expiresAt,
+                        cavoSessionToken: session.token,
+                        cavoSessionExpiresAt: session.expiresAt,
                       })
                       finishLogin()
                     }).catch((error) => {
-                      setLoginError(error.message || 'Failed to create Cavopay session')
+                      setLoginError(error.message || 'Failed to create Cavo session')
                       setGoogleLoading(false)
                     })
                   }) as EventListener, { once: true })
@@ -316,7 +316,7 @@ export default function WalletButton({ className = '', username }: Props) {
                 </div>
                 <div style={{ textAlign: 'left' }}>
                   <div className="connector-name">{googleLoading ? 'Opening Google...' : 'Continue with Google'}</div>
-                  <div className="connector-desc">Gmail login for Cavopay</div>
+                  <div className="connector-desc">Gmail login for Cavo</div>
                 </div>
               </button>
             )}
@@ -334,7 +334,7 @@ export default function WalletButton({ className = '', username }: Props) {
                 </div>
                 <div style={{ textAlign: 'left', flex: 1 }}>
                   <div className="connector-name">Continue with Email</div>
-                  <div className="connector-desc">Get a 6-digit Cavopay code</div>
+                  <div className="connector-desc">Get a 6-digit Cavo code</div>
                 </div>
               </button>
             ) : (

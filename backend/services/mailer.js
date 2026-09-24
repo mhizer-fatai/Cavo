@@ -3,7 +3,7 @@ const tls = require("tls");
 const GMAIL_HOST = "smtp.gmail.com";
 const GMAIL_PORT = 465;
 const DEFAULT_GMAIL_USER = "cavopay.auth@gmail.com";
-const DEFAULT_EMAIL_FROM = "Cavopay <cavopay.auth@gmail.com>";
+const DEFAULT_EMAIL_FROM = "Cavo <cavopay.auth@gmail.com>";
 
 function getEmailConfig() {
   const user = process.env.GMAIL_USER || DEFAULT_GMAIL_USER;
@@ -105,7 +105,7 @@ async function sendEmail({ to, subject, html, text }) {
 
   try {
     await readResponse(socket);
-    await sendCommand(socket, "EHLO cavopay.local", ["250"]);
+    await sendCommand(socket, "EHLO cavo.local", ["250"]);
     await sendCommand(socket, "AUTH LOGIN", ["334"]);
     await sendCommand(socket, Buffer.from(config.user).toString("base64"), ["334"]);
     await sendCommand(socket, Buffer.from(config.appPassword).toString("base64"), ["235"]);

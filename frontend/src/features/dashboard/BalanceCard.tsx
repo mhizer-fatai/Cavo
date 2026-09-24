@@ -19,8 +19,8 @@ export default function BalanceCard({
     <div className="virtual-card">
       <div className="card-header">
         <div className="card-brand">
-          <img src="/cavopay-logo.png" alt="Cavopay" className="card-brand-logo" />
-          <img src="/cavopay-wordmark.png" alt="Cavopay" className="card-brand-wordmark" />
+          <img src="/cavo-logo.png" alt="Cavo" className="card-brand-logo" />
+          <img src="/cavo-wordmark.png" alt="Cavo" className="card-brand-wordmark" />
         </div>
         <div className="card-header-right">
           {syncing && (

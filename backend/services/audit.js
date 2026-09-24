@@ -29,19 +29,19 @@ async function recordAuditEvent({ userKey, action, outcome = "ok", ip, userAgent
   };
   try {
     if (!supabase || useMemory) {
-      memStore.cavopayAuditLog.push(event);
-      if (memStore.cavopayAuditLog.length > 500) {
-        memStore.cavopayAuditLog.splice(0, memStore.cavopayAuditLog.length - 500);
+      memStore.cavoAuditLog.push(event);
+      if (memStore.cavoAuditLog.length > 500) {
+        memStore.cavoAuditLog.splice(0, memStore.cavoAuditLog.length - 500);
       }
       return;
     }
-    const { error } = await supabase.from("cavopay_audit_log").insert(event);
+    const { error } = await supabase.from("cavo_audit_log").insert(event);
     if (error) throw error;
   } catch (err) {
     if (err && err.code === "PGRST205" && !useMemory) {
       useMemory = true; // table not migrated yet — loud once, then memory
-      console.warn("cavopay_audit_log table missing — run backend/db/11_security.sql. Auditing to memory.");
-      memStore.cavopayAuditLog.push(event);
+      console.warn("cavo_audit_log table missing — run backend/db/11_security.sql. Auditing to memory.");
+      memStore.cavoAuditLog.push(event);
       return;
     }
     console.error("Audit log write failed:", err.message || err);

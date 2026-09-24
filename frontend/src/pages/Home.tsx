@@ -17,7 +17,7 @@ import {
 } from 'lucide-react'
 import Navbar from '../components/Navbar'
 import WalletButton from '../components/WalletButton'
-import { useCavopayAuth } from '../context/AuthContext'
+import { useCavoAuth } from '../context/AuthContext'
 
 function Reveal({ children, delay = 0, className = '' }: { children: ReactNode; delay?: number; className?: string }) {
   const ref = useRef<HTMLDivElement | null>(null)
@@ -98,13 +98,13 @@ const WHY_POINTS = [
 
 const STEPS = [
   { icon: <Link2 size={26} />, title: 'Create your account', desc: 'Sign in, get an in-app Circle wallet automatically, and claim your @username.' },
-  { icon: <Send size={26} />, title: 'Fund it your way', desc: 'Receive from any Cavopay user, share a payment link, or bridge USDC from another chain.' },
+  { icon: <Send size={26} />, title: 'Fund it your way', desc: 'Receive from any Cavo user, share a payment link, or bridge USDC from another chain.' },
   { icon: <ArrowLeftRight size={26} />, title: 'Send, swap and earn', desc: 'Move money by handle, convert between currencies, and grow idle balances in vaults.' },
 ]
 
 export default function HomePage() {
-  const { user } = useCavopayAuth()
-  const isLoggedIn = !!user?.cavopaySessionToken
+  const { user } = useCavoAuth()
+  const isLoggedIn = !!user?.cavoSessionToken
   const marqueeItems = [...MARQUEE_ITEMS, ...MARQUEE_ITEMS]
 
   return (
@@ -123,7 +123,7 @@ export default function HomePage() {
             <span className="gradient-text">One stablecoin account.</span>
           </h1>
           <p className="hero-sub">
-            Cavopay is a neobank for USDC and EURC. A @username instead of a hex address, a PIN instead
+            Cavo is a neobank for USDC and EURC. A @username instead of a hex address, a PIN instead
             of a seed phrase, and settlement that lands in seconds.
           </p>
           <div className="hero-btns">
@@ -135,7 +135,7 @@ export default function HomePage() {
               </Link>
             )}
             <a href="#what" className="btn btn-secondary btn-lg">
-              What is Cavopay?
+              What is Cavo?
             </a>
           </div>
         </div>
@@ -157,10 +157,10 @@ export default function HomePage() {
         <div className="container">
           <div className="home-about-grid">
             <Reveal>
-              <span className="home-kicker">What is Cavopay</span>
+              <span className="home-kicker">What is Cavo</span>
               <h2 className="home-h2">A bank account built on stablecoins</h2>
               <p className="home-body">
-                Cavopay gives you a payment account for digital dollars and euros. Behind the scenes your
+                Cavo gives you a payment account for digital dollars and euros. Behind the scenes your
                 money lives in Circle-backed wallets on the Arc network — a blockchain built by the issuer
                 of USDC for payments. In front, it feels like any modern banking app.
               </p>
@@ -208,7 +208,7 @@ export default function HomePage() {
       <section className="home-section">
         <div className="container">
           <Reveal className="home-center">
-            <span className="home-kicker">Why Cavopay</span>
+            <span className="home-kicker">Why Cavo</span>
             <h2 className="home-h2">Crypto money, without the crypto headaches</h2>
           </Reveal>
           <div className="home-why-grid">
@@ -252,7 +252,7 @@ export default function HomePage() {
           <Reveal>
             <div className="cta-card">
               <h2 className="cta-title">Your stablecoin account is one sign-in away</h2>
-              <p className="cta-desc">Create your Cavopay wallet, claim your @username, and start moving money in seconds.</p>
+              <p className="cta-desc">Create your Cavo wallet, claim your @username, and start moving money in seconds.</p>
               {!isLoggedIn ? (
                 <WalletButton className="btn-lg" />
               ) : (
@@ -268,8 +268,8 @@ export default function HomePage() {
       <footer className="footer">
         <div className="container footer-inner">
           <div className="footer-left">
-            <img src="/cavopay-logo.png" alt="Cavopay" style={{ width: 24, height: 24, borderRadius: 6, marginRight: 8 }} />
-            <span style={{ fontWeight: 600, color: 'var(--ink)' }}>Cavopay</span>
+            <img src="/cavo-logo.png" alt="Cavo" style={{ width: 24, height: 24, borderRadius: 6, marginRight: 8 }} />
+            <span style={{ fontWeight: 600, color: 'var(--ink)' }}>Cavo</span>
           </div>
           <div className="footer-right">
             Built on <a href="https://arc.network" target="_blank" rel="noopener noreferrer">Arc Network</a>

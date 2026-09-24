@@ -12,9 +12,9 @@ const { memStore } = require("../supabase");
 const ACCESS_TTL_SECONDS = 15 * 60;
 const REFRESH_TTL_SECONDS = 30 * 24 * 60 * 60;
 const LOGIN_TICKET_TTL_SECONDS = 5 * 60;
-const ISSUER = "cavopay-api";
-const AUDIENCE = "cavopay-web";
-const SESSION_COOKIE_NAME = "cavopay_rt";
+const ISSUER = "cavo-api";
+const AUDIENCE = "cavo-web";
+const SESSION_COOKIE_NAME = "cavo_rt";
 
 let supabase = null;
 function setSupabase(client) {
@@ -50,7 +50,7 @@ async function withDbFallback(memFn, dbFn) {
 async function probeSessionTables() {
   if (!supabase) return "memory";
   try {
-    const { error } = await supabase.from("cavopay_sessions").select("id").limit(1);
+    const { error } = await supabase.from("cavo_sessions").select("id").limit(1);
     if (error) throw error;
     return "supabase";
   } catch (err) {
@@ -74,9 +74,9 @@ function base64url(input) {
 // Fail closed: a dedicated session secret is mandatory. Falling back to a
 // Circle secret would let one leaked Circle credential forge every session.
 function getSessionSecret() {
-  const secret = process.env.CAVOPAY_SESSION_SECRET;
+  const secret = process.env.CAVO_SESSION_SECRET;
   if (!secret || secret.length < 32) {
-    throw new Error("CAVOPAY_SESSION_SECRET is not configured (min 32 chars). Refusing to sign sessions.");
+    throw new Error("CAVO_SESSION_SECRET is not configured (min 32 chars). Refusing to sign sessions.");
   }
   return secret;
 }
@@ -138,11 +138,11 @@ function validateSessionIdentity({ authProvider, providerUserId, email, userKey 
   if (!normalizedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
     throw Object.assign(new Error("Valid login email is required"), { status: 400 });
   }
-  // Cavopay convention: userKey is `email:<address>` for both email and
+  // Cavo convention: userKey is `email:<address>` for both email and
   // Google logins (see frontend buildGoogleUserKey). The provider distinction
   // lives in authProvider, not in the key.
   if (!normalizedUserKey.startsWith(`email:${normalizedEmail}`)) {
-    throw Object.assign(new Error("Login identity does not match Cavopay account"), { status: 403 });
+    throw Object.assign(new Error("Login identity does not match Cavo account"), { status: 403 });
   }
 
   return {
@@ -159,17 +159,17 @@ async function isJtiRevoked(jti) {
   if (!jti) return false;
   return withDbFallback(
     () => {
-      const expiresAtMs = memStore.cavopayRevokedJti.get(jti);
+      const expiresAtMs = memStore.cavoRevokedJti.get(jti);
       if (!expiresAtMs) return false;
       if (expiresAtMs < Date.now()) {
-        memStore.cavopayRevokedJti.delete(jti);
+        memStore.cavoRevokedJti.delete(jti);
         return false;
       }
       return true;
     },
     async (db) => {
       const { data, error } = await db
-        .from("cavopay_revoked_jti")
+        .from("cavo_revoked_jti")
         .select("jti, expires_at")
         .eq("jti", jti)
         .maybeSingle();
@@ -185,10 +185,10 @@ async function revokeJti(jti, reason, expiresAtMs) {
   if (!jti) return;
   return withDbFallback(
     () => {
-      memStore.cavopayRevokedJti.set(jti, expiresAtMs);
+      memStore.cavoRevokedJti.set(jti, expiresAtMs);
     },
     async (db) => {
-      const { error } = await db.from("cavopay_revoked_jti").upsert(
+      const { error } = await db.from("cavo_revoked_jti").upsert(
         {
           jti,
           reason: reason || "revoked",
@@ -225,34 +225,34 @@ function createAccessToken(identity, sessionId) {
   };
 }
 
-async function verifyCavopaySession(token) {
+async function verifyCavoSession(token) {
   const claims = decodeAndVerifySignature(token);
   const now = Math.floor(Date.now() / 1000);
   if (claims.iss !== ISSUER || claims.aud !== AUDIENCE) {
-    throw Object.assign(new Error("Token was not issued for Cavopay"), { status: 401 });
+    throw Object.assign(new Error("Token was not issued for Cavo"), { status: 401 });
   }
   if (claims.purpose && claims.purpose !== "access") {
     throw Object.assign(new Error("Wrong token purpose"), { status: 401 });
   }
   if (!claims.exp || claims.exp < now) {
-    throw Object.assign(new Error("Cavopay session expired. Please sign in again."), { status: 401 });
+    throw Object.assign(new Error("Cavo session expired. Please sign in again."), { status: 401 });
   }
   if (!claims.sub || !claims.sid || !claims.jti) {
-    throw Object.assign(new Error("Cavopay session is missing identity"), { status: 401 });
+    throw Object.assign(new Error("Cavo session is missing identity"), { status: 401 });
   }
   if (await isJtiRevoked(claims.jti)) {
-    throw Object.assign(new Error("Cavopay session was revoked. Please sign in again."), { status: 401 });
+    throw Object.assign(new Error("Cavo session was revoked. Please sign in again."), { status: 401 });
   }
   return claims;
 }
 
 // Legacy 1-hour tokens (pre-mainnet) have no iss/aud/sid/jti and are rejected.
-function requireCavopaySession(req, res, next) {
+function requireCavoSession(req, res, next) {
   const auth = req.get("Authorization") || "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  verifyCavopaySession(token)
+  verifyCavoSession(token)
     .then((claims) => {
-      req.cavopaySession = claims;
+      req.cavoSession = claims;
       req.authUserKey = normalizeUserKey(claims.sub || claims.userKey);
       next();
     })
@@ -264,14 +264,14 @@ function requireCavopaySession(req, res, next) {
 // is rejected outright (confused-deputy defense). Handlers must use
 // req.authUserKey and never read userKey from body/query for decisions.
 function requireMatchingUserKey(req, res, next) {
-  const sessionUserKey = normalizeUserKey(req.cavopaySession?.sub || req.cavopaySession?.userKey);
+  const sessionUserKey = normalizeUserKey(req.cavoSession?.sub || req.cavoSession?.userKey);
   if (!sessionUserKey) {
-    return res.status(401).json({ error: "Cavopay session is missing identity" });
+    return res.status(401).json({ error: "Cavo session is missing identity" });
   }
   req.authUserKey = sessionUserKey;
   const claimedUserKey = normalizeUserKey(req.body?.userKey || req.query?.userKey);
   if (claimedUserKey && claimedUserKey !== sessionUserKey) {
-    return res.status(403).json({ error: "Cavopay session does not match this account" });
+    return res.status(403).json({ error: "Cavo session does not match this account" });
   }
   next();
 }
@@ -335,11 +335,11 @@ async function consumeLoginTicket(ticket) {
 async function insertSessionRow(row) {
   return withDbFallback(
     () => {
-      memStore.cavopaySessions.set(row.refresh_hash, row);
+      memStore.cavoSessions.set(row.refresh_hash, row);
       return row;
     },
     async (db) => {
-      const { data, error } = await db.from("cavopay_sessions").insert(row).select().single();
+      const { data, error } = await db.from("cavo_sessions").insert(row).select().single();
       if (error) throw error;
       return data;
     }
@@ -348,10 +348,10 @@ async function insertSessionRow(row) {
 
 async function findSessionRow(refreshHash) {
   return withDbFallback(
-    () => memStore.cavopaySessions.get(refreshHash) || null,
+    () => memStore.cavoSessions.get(refreshHash) || null,
     async (db) => {
       const { data, error } = await db
-        .from("cavopay_sessions")
+        .from("cavo_sessions")
         .select("*")
         .eq("refresh_hash", refreshHash)
         .maybeSingle();
@@ -365,11 +365,11 @@ async function markSessionRowRevoked(refreshHash) {
   const now = new Date().toISOString();
   return withDbFallback(
     () => {
-      const row = memStore.cavopaySessions.get(refreshHash);
-      if (row) memStore.cavopaySessions.set(refreshHash, { ...row, revoked_at: now });
+      const row = memStore.cavoSessions.get(refreshHash);
+      if (row) memStore.cavoSessions.set(refreshHash, { ...row, revoked_at: now });
     },
     async (db) => {
-      const { error } = await db.from("cavopay_sessions").update({ revoked_at: now }).eq("refresh_hash", refreshHash);
+      const { error } = await db.from("cavo_sessions").update({ revoked_at: now }).eq("refresh_hash", refreshHash);
       if (error) throw error;
     }
   );
@@ -379,15 +379,15 @@ async function revokeSessionFamily(sessionId) {
   const now = new Date().toISOString();
   return withDbFallback(
     () => {
-      for (const [hash, row] of memStore.cavopaySessions.entries()) {
+      for (const [hash, row] of memStore.cavoSessions.entries()) {
         if (row.session_id === sessionId && !row.revoked_at) {
-          memStore.cavopaySessions.set(hash, { ...row, revoked_at: now });
+          memStore.cavoSessions.set(hash, { ...row, revoked_at: now });
         }
       }
     },
     async (db) => {
       const { error } = await db
-        .from("cavopay_sessions")
+        .from("cavo_sessions")
         .update({ revoked_at: now })
         .eq("session_id", sessionId)
         .is("revoked_at", null);
@@ -498,12 +498,12 @@ async function listUserSessions(userKey) {
   });
   return withDbFallback(
     () =>
-      [...memStore.cavopaySessions.values()]
+      [...memStore.cavoSessions.values()]
         .filter((row) => row.user_key === normalized && !row.revoked_at && row.expires_at > now)
         .map(shape),
     async (db) => {
       const { data, error } = await db
-        .from("cavopay_sessions")
+        .from("cavo_sessions")
         .select("session_id, created_at, last_refresh_at, expires_at, user_agent, ip")
         .eq("user_key", normalized)
         .is("revoked_at", null)
@@ -519,15 +519,15 @@ async function revokeAllUserSessions(userKey) {
   const now = new Date().toISOString();
   return withDbFallback(
     () => {
-      for (const [hash, row] of memStore.cavopaySessions.entries()) {
+      for (const [hash, row] of memStore.cavoSessions.entries()) {
         if (row.user_key === normalized && !row.revoked_at) {
-          memStore.cavopaySessions.set(hash, { ...row, revoked_at: now });
+          memStore.cavoSessions.set(hash, { ...row, revoked_at: now });
         }
       }
     },
     async (db) => {
       const { error } = await db
-        .from("cavopay_sessions")
+        .from("cavo_sessions")
         .update({ revoked_at: now })
         .eq("user_key", normalized)
         .is("revoked_at", null);
@@ -599,8 +599,8 @@ module.exports = {
   SESSION_COOKIE_NAME,
   normalizeUserKey,
   createAccessToken,
-  verifyCavopaySession,
-  requireCavopaySession,
+  verifyCavoSession,
+  requireCavoSession,
   requireMatchingUserKey,
   ownsWalletAddress,
   createLoginTicket,

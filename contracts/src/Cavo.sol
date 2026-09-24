@@ -6,11 +6,11 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /**
- * @title Cavopay
+ * @title Cavo
  * @notice Arc-native USDC/EURC payment link router
  * @dev Routes payments directly to creator, deducts platform fee
  */
-contract Cavopay is Ownable, ReentrancyGuard {
+contract Cavo is Ownable, ReentrancyGuard {
     // ─── Events ────────────────────────────────────────────────────────
     event PaymentMade(
         bytes32 indexed linkId,

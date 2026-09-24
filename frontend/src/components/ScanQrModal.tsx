@@ -26,7 +26,7 @@ export default function ScanQrModal({ onClose, onScan }: ScanQrModalProps) {
       try {
         const BarcodeDetectorCtor = (window as any).BarcodeDetector
         if (!BarcodeDetectorCtor) {
-          setError('QR scanning is not supported in this browser yet. Paste the Cavopay QR link below.')
+          setError('QR scanning is not supported in this browser yet. Paste the Cavo QR link below.')
           return
         }
 
@@ -60,7 +60,7 @@ export default function ScanQrModal({ onClose, onScan }: ScanQrModalProps) {
 
         scan()
       } catch (err: any) {
-        setError(err?.message || 'Camera permission was denied. Paste the Cavopay QR link below.')
+        setError(err?.message || 'Camera permission was denied. Paste the Cavo QR link below.')
       }
     }
 
@@ -81,7 +81,7 @@ export default function ScanQrModal({ onClose, onScan }: ScanQrModalProps) {
           </button>
         </div>
         <p className="wc-sub scan-qr-sub">
-          Point your camera at a Cavopay payment QR to open the payment screen.
+          Point your camera at a Cavo payment QR to open the payment screen.
         </p>
 
         <div className="scan-camera-frame">
@@ -97,7 +97,7 @@ export default function ScanQrModal({ onClose, onScan }: ScanQrModalProps) {
             className="form-input"
             value={manualValue}
             onChange={event => setManualValue(event.target.value)}
-            placeholder="Paste Cavopay QR link"
+            placeholder="Paste Cavo QR link"
           />
           <button className="btn btn-primary btn-full" onClick={() => manualValue && onScan(manualValue)} disabled={!manualValue}>
             Open Payment

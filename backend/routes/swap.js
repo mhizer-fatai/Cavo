@@ -1,13 +1,13 @@
 const express = require("express");
 const crypto = require("crypto");
 const router = express.Router();
-const { requireMatchingUserKey, requireCavopaySession } = require("../services/sessions");
+const { requireMatchingUserKey, requireCavoSession } = require("../services/sessions");
 const { idempotencyGuard } = require("../middleware/idempotency");
 const { schemas, validateBody } = require("../middleware/validate");
 const { consumeApproval } = require("../services/pins");
 const swapService = require("../services/swaps");
 
-router.post("/quote", requireCavopaySession, requireMatchingUserKey, validateBody(schemas.swapQuote), async (req, res) => {
+router.post("/quote", requireCavoSession, requireMatchingUserKey, validateBody(schemas.swapQuote), async (req, res) => {
   try {
     const quote = await swapService.getSwapQuote({
       tokenIn: req.body.tokenIn,
@@ -24,7 +24,7 @@ router.post("/quote", requireCavopaySession, requireMatchingUserKey, validateBod
   }
 });
 
-router.post("/execute", requireCavopaySession, requireMatchingUserKey, validateBody(schemas.swapExecute), idempotencyGuard, async (req, res) => {
+router.post("/execute", requireCavoSession, requireMatchingUserKey, validateBody(schemas.swapExecute), idempotencyGuard, async (req, res) => {
   const userKey = req.authUserKey;
   const walletAddress = String(req.body.walletAddress || "").toLowerCase().trim();
   const walletId = String(req.body.walletId || "").trim();
@@ -42,7 +42,7 @@ router.post("/execute", requireCavopaySession, requireMatchingUserKey, validateB
 
     const wallet = await swapService.getWalletForUser(userKey);
     if (!wallet || wallet.circle_wallet_id !== walletId || wallet.wallet_address !== walletAddress) {
-      return res.status(403).json({ error: "Wallet does not belong to this Cavopay account" });
+      return res.status(403).json({ error: "Wallet does not belong to this Cavo account" });
     }
 
     await consumeApproval({
@@ -103,7 +103,7 @@ router.post("/execute", requireCavopaySession, requireMatchingUserKey, validateB
   }
 });
 
-router.get("/history", requireCavopaySession, requireMatchingUserKey, async (req, res) => {
+router.get("/history", requireCavoSession, requireMatchingUserKey, async (req, res) => {
   try {
     const userKey = req.authUserKey;
     const swaps = await swapService.listSwapsForUser(userKey);

@@ -2,7 +2,7 @@ const express = require("express");
 const { supabase, memStore } = require("../supabase");
 const { v4: uuidv4 } = require("uuid");
 const { isValidAddressForChain, normalizeAccountAddress } = require("../services/arc");
-const { requireCavopaySession, ownsWalletAddress } = require("../services/sessions");
+const { requireCavoSession, ownsWalletAddress } = require("../services/sessions");
 const { recordAuditEvent, getClientIp } = require("../services/audit");
 const { schemas, validateBody } = require("../middleware/validate");
 
@@ -19,7 +19,7 @@ const CHAIN_RPC = {
 
 // ─── POST /api/payments ───────────────────────────────────────────────────────
 // Log a confirmed on-chain payment (authenticated: callers prove their session)
-router.post("/", requireCavopaySession, validateBody(schemas.paymentLog), async (req, res) => {
+router.post("/", requireCavoSession, validateBody(schemas.paymentLog), async (req, res) => {
   try {
     const { linkId, payerAddress, recipientAddress, sourceChain, destinationChain, txHash, amount, token } = req.body;
     const normalizedSourceChain = sourceChain || "Arc_Testnet";
@@ -115,10 +115,10 @@ router.post("/", requireCavopaySession, validateBody(schemas.paymentLog), async 
 
 // ─── GET /api/payments/creator/:address ───────────────────────────────────────
 // Financial history: the address must belong to the caller (M1).
-router.get("/creator/:address", requireCavopaySession, async (req, res) => {
+router.get("/creator/:address", requireCavoSession, async (req, res) => {
   try {
     if (!(await ownsWalletAddress(req.authUserKey, req.params.address))) {
-      return res.status(403).json({ error: "History does not belong to this Cavopay account" });
+      return res.status(403).json({ error: "History does not belong to this Cavo account" });
     }
     const address = req.params.address.toLowerCase();
 
@@ -163,10 +163,10 @@ router.get("/creator/:address", requireCavopaySession, async (req, res) => {
 
 // ─── GET /api/payments/payer/:address ─────────────────────────────────────────
 // Financial history: the address must belong to the caller (M1).
-router.get("/payer/:address", requireCavopaySession, async (req, res) => {
+router.get("/payer/:address", requireCavoSession, async (req, res) => {
   try {
     if (!(await ownsWalletAddress(req.authUserKey, req.params.address))) {
-      return res.status(403).json({ error: "History does not belong to this Cavopay account" });
+      return res.status(403).json({ error: "History does not belong to this Cavo account" });
     }
     const address = req.params.address.toLowerCase();
 

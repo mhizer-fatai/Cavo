@@ -12,7 +12,7 @@ const {
   waitForTransactionHash,
 } = require('../services/wallets');
 const { consumeApproval } = require('../services/pins');
-const { requireMatchingUserKey, requireCavopaySession } = require('../services/sessions');
+const { requireMatchingUserKey, requireCavoSession } = require('../services/sessions');
 const { idempotencyGuard } = require('../middleware/idempotency');
 const { schemas, validateBody } = require('../middleware/validate');
 const {
@@ -160,10 +160,10 @@ async function createAndStoreWallet(userAddress) {
  * Creates a Circle Dev-Controlled wallet for the user on Arc Testnet.
  * If the user already has one, returns the existing wallet.
  */
-router.post('/create', requireCavopaySession, requireMatchingUserKey, async (req, res) => {
+router.post('/create', requireCavoSession, requireMatchingUserKey, async (req, res) => {
   try {
     const userAddress = req.authUserKey;
-    if (!userAddress) return res.status(401).json({ error: 'Cavopay session is missing identity' });
+    if (!userAddress) return res.status(401).json({ error: 'Cavo session is missing identity' });
     if (!supabase) return res.status(500).json({ error: 'Supabase client not initialized' });
     const normalizedAddress = userAddress;
 
@@ -215,10 +215,10 @@ router.post('/create', requireCavopaySession, requireMatchingUserKey, async (req
  * GET /api/wallets/me?address=0x...
  * Returns the user's Circle wallet info.
  */
-router.get('/me', requireCavopaySession, requireMatchingUserKey, async (req, res) => {
+router.get('/me', requireCavoSession, requireMatchingUserKey, async (req, res) => {
   try {
     const address = req.authUserKey;
-    if (!address) return res.status(401).json({ error: 'Cavopay session is missing identity' });
+    if (!address) return res.status(401).json({ error: 'Cavo session is missing identity' });
     if (!supabase) return res.status(500).json({ error: 'Supabase client not initialized' });
 
     const wallet = await getExistingWallet(address.toLowerCase());
@@ -246,7 +246,7 @@ router.get('/me', requireCavopaySession, requireMatchingUserKey, async (req, res
   }
 });
 
-router.post('/send', requireCavopaySession, requireMatchingUserKey, validateBody(schemas.walletSend), idempotencyGuard, async (req, res) => {
+router.post('/send', requireCavoSession, requireMatchingUserKey, validateBody(schemas.walletSend), idempotencyGuard, async (req, res) => {
   try {
     const userKey = req.authUserKey;
     const walletAddress = String(req.body.walletAddress || '').toLowerCase().trim();
@@ -272,7 +272,7 @@ router.post('/send', requireCavopaySession, requireMatchingUserKey, validateBody
 
     const wallet = await getExistingWallet(userKey);
     if (!wallet || wallet.circle_wallet_id !== walletId || wallet.wallet_address !== walletAddress) {
-      return res.status(403).json({ error: 'Wallet does not belong to this Cavopay account' });
+      return res.status(403).json({ error: 'Wallet does not belong to this Cavo account' });
     }
 
     await consumeApproval({
@@ -331,12 +331,12 @@ router.get('/destination-chains', (_req, res) => {
   return res.json(Object.values(SUPPORTED_DESTINATION_CHAINS));
 });
 
-router.get('/transactions/:trackingId', requireCavopaySession, async (req, res) => {
+router.get('/transactions/:trackingId', requireCavoSession, async (req, res) => {
   try {
     const record = trackedTransactions.get(req.params.trackingId);
     if (!record) return res.status(404).json({ error: 'Transaction tracker not found' });
     if (record.userKey !== req.authUserKey) {
-      return res.status(403).json({ error: 'Transaction tracker does not belong to this Cavopay session' });
+      return res.status(403).json({ error: 'Transaction tracker does not belong to this Cavo session' });
     }
 
     const refreshed = await refreshTrackingRecord(record);
@@ -351,7 +351,7 @@ router.get('/transactions/:trackingId', requireCavopaySession, async (req, res) 
   }
 });
 
-router.post('/bridge', requireCavopaySession, requireMatchingUserKey, validateBody(schemas.walletBridge), idempotencyGuard, async (req, res) => {
+router.post('/bridge', requireCavoSession, requireMatchingUserKey, validateBody(schemas.walletBridge), idempotencyGuard, async (req, res) => {
   try {
     const userKey = req.authUserKey;
     const walletAddress = String(req.body.walletAddress || '').toLowerCase().trim();
@@ -373,7 +373,7 @@ router.post('/bridge', requireCavopaySession, requireMatchingUserKey, validateBo
 
     const wallet = await getExistingWallet(userKey);
     if (!wallet || wallet.circle_wallet_id !== walletId || wallet.wallet_address !== walletAddress) {
-      return res.status(403).json({ error: 'Wallet does not belong to this Cavopay account' });
+      return res.status(403).json({ error: 'Wallet does not belong to this Cavo account' });
     }
 
     await consumeApproval({
