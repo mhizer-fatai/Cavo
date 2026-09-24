@@ -35,6 +35,11 @@ router.post("/", requireCavoSession, validateBody(schemas.paymentLog), async (re
     if (!/^0x[a-fA-F0-9]{40}$/i.test(payerAddress)) {
       return res.status(400).json({ error: "Invalid wallet address format" });
     }
+
+    // The payer must be the caller's own wallet (anti-forgery attribution).
+    if (!(await ownsWalletAddress(req.authUserKey, payerAddress))) {
+      return res.status(403).json({ error: "Payer wallet does not belong to this Cavo account" });
+    }
     const destChain = destinationChain || "Arc_Testnet";
     if (recipientAddress && !isValidAddressForChain(destChain, recipientAddress)) {
       return res.status(400).json({ error: "Invalid recipient wallet address format" });
@@ -71,6 +76,11 @@ router.post("/", requireCavoSession, validateBody(schemas.paymentLog), async (re
       if (rpcData.result.status !== "0x1") {
         return res.status(400).json({ error: "Transaction failed on-chain" });
       }
+
+      // The logged payer must actually be the transaction's sender.
+      if (String(rpcData.result.from || "").toLowerCase() !== payerAddress.toLowerCase()) {
+        return res.status(400).json({ error: "Transaction sender does not match the payer address" });
+      }
     } catch (rpcErr) {
       console.error("RPC verification error:", rpcErr.message);
       // If the RPC is down, reject the payment to be safe
@@ -91,9 +101,14 @@ router.post("/", requireCavoSession, validateBody(schemas.paymentLog), async (re
     };
 
     if (supabase) {
+      const { data: dupe } = await supabase.from("payments").select("id").eq("tx_hash", txHash).maybeSingle();
+      if (dupe) return res.status(409).json({ error: "This transaction has already been logged" });
       const { error } = await supabase.from("payments").insert(record);
       if (error) throw error;
     } else {
+      if (memStore.payments.some(p => p.tx_hash === txHash)) {
+        return res.status(409).json({ error: "This transaction has already been logged" });
+      }
       memStore.payments.push(record);
     }
 

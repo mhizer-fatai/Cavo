@@ -1,7 +1,7 @@
 const express = require("express");
 const crypto = require("crypto");
 const router = express.Router();
-const { requireMatchingUserKey, requireCavoSession } = require("../services/sessions");
+const { requireCavoSession, requireMatchingUserKey, ownsWalletAddress } = require("../services/sessions");
 const { idempotencyGuard } = require("../middleware/idempotency");
 const { schemas, validateBody } = require("../middleware/validate");
 const { consumeApproval } = require("../services/pins");
@@ -20,6 +20,13 @@ router.get("/vaults", async (req, res) => {
   try {
     const walletAddress = String(req.query.walletAddress || "").toLowerCase().trim() || undefined;
     const vaults = await earnService.getVaults(walletAddress);
+    // Per-wallet balances are financial data: only expose them to the owner.
+    if (walletAddress) {
+      const owns = await ownsWalletAddress(req.authUserKey, walletAddress).catch(() => false);
+      if (!owns) {
+        return res.json(vaults.map(({ shareBalance, maxDeposit, maxRedeem, ...pub }) => pub));
+      }
+    }
     return res.json(vaults);
   } catch (err) {
     console.error("Earn vaults error:", err.message || err);

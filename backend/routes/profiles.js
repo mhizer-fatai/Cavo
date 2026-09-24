@@ -295,13 +295,16 @@ router.get("/wallet/:walletAddress", async (req, res) => {
       if (error) throw error;
       if (!data) return res.json(null);
 
-      return res.json(data);
+      // Public lookup: strip the owner identity key (may contain the email).
+      const { owner_address: _owner, ...publicProfile } = data;
+      return res.json(publicProfile);
     } else {
       const record = Array.from(memStore.profiles.values()).find(
         (p) => p.wallet_address === walletAddress
       );
       if (!record) return res.json(null);
-      return res.json(record);
+      const { owner_address: _owner, ...publicProfile } = record;
+      return res.json(publicProfile);
     }
   } catch (err) {
     console.error("Error fetching profile by wallet:", err);
@@ -323,11 +326,14 @@ router.get("/:username", async (req, res) => {
 
       if (error || !data) return res.status(404).json({ error: "Profile not found" });
 
-      return res.json(data);
+      // Public lookup: strip the owner identity key (may contain the email).
+      const { owner_address: _owner, ...publicProfile } = data;
+      return res.json(publicProfile);
     } else {
       const record = memStore.profiles.get(username);
       if (!record) return res.status(404).json({ error: "Profile not found" });
-      return res.json(record);
+      const { owner_address: _owner, ...publicProfile } = record;
+      return res.json(publicProfile);
     }
   } catch (err) {
     console.error("Error fetching profile:", err);

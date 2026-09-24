@@ -533,13 +533,23 @@ async function consumeApproval(payload) {
 
   const usedAt = new Date().toISOString();
   if (await supportsTables()) {
-    const { error } = await supabase
+    // Require the conditional update to actually flip the row: a concurrent
+    // consume must lose here, or one approval could execute twice.
+    const { data, error } = await supabase
       .from("cavo_pin_approvals")
       .update({ used_at: usedAt })
       .eq("id", approvalId)
-      .is("used_at", null);
+      .is("used_at", null)
+      .select("id");
     if (error) throw error;
+    if (!data || data.length === 0) {
+      throw Object.assign(new Error("Cavo PIN approval was already used"), { status: 401 });
+    }
   } else {
+    const current = memoryApprovals.get(approvalId);
+    if (!current || current.used_at) {
+      throw Object.assign(new Error("Cavo PIN approval was already used"), { status: 401 });
+    }
     memoryApprovals.set(approval.id, { ...approval, used_at: usedAt });
   }
 
