@@ -1,5 +1,5 @@
--- PayMe payment PINs, one-time transaction approvals, and security audit events.
-CREATE TABLE public.payme_pins (
+-- Cavo payment PINs, one-time transaction approvals, and security audit events.
+CREATE TABLE public.cavo_pins (
   user_key TEXT PRIMARY KEY,
   pin_hash TEXT NOT NULL,
   salt TEXT NOT NULL,
@@ -14,14 +14,14 @@ CREATE TABLE public.payme_pins (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-DROP TRIGGER IF EXISTS payme_pins_set_updated_at ON public.payme_pins;
+DROP TRIGGER IF EXISTS cavo_pins_set_updated_at ON public.cavo_pins;
 
-CREATE TRIGGER payme_pins_set_updated_at
-BEFORE UPDATE ON public.payme_pins
+CREATE TRIGGER cavo_pins_set_updated_at
+BEFORE UPDATE ON public.cavo_pins
 FOR EACH ROW
 EXECUTE FUNCTION public.set_updated_at();
 
-CREATE TABLE public.payme_pin_approvals (
+CREATE TABLE public.cavo_pin_approvals (
   id UUID PRIMARY KEY,
   user_key TEXT NOT NULL,
   wallet_address TEXT NOT NULL,
@@ -35,7 +35,7 @@ CREATE TABLE public.payme_pin_approvals (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE public.payme_security_events (
+CREATE TABLE public.cavo_security_events (
   id UUID PRIMARY KEY,
   event_type TEXT NOT NULL,
   user_key TEXT,

@@ -1,10 +1,10 @@
 import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { completeGoogleLoginFromRedirect } from '../lib/circleAuth'
-import { createPayMeSession } from '../lib/api'
-import { buildGoogleUserKey, circleUserIdFromUserKey } from '../lib/devIdentity'
+import { completeGoogleLoginFromRedirect } from '../lib/google'
+import { createCavopaySession, logoutCavopaySession, refreshCavopaySession, setMemorySessionToken } from '../lib/api'
+import { buildGoogleUserKey, circleUserIdFromUserKey } from '../lib/identity'
 
-export type PayMeAuthUser = {
+export type CavopayAuthUser = {
   authProvider: 'google' | 'email'
   providerUserId: string
   userKey: string
@@ -14,19 +14,32 @@ export type PayMeAuthUser = {
   userToken?: string
   encryptionKey?: string
   refreshToken?: string
-  paymeSessionToken?: string
-  paymeSessionExpiresAt?: string
+  cavopaySessionToken?: string
+  cavopaySessionExpiresAt?: string
 }
 
 type AuthContextValue = {
-  user: PayMeAuthUser | null
+  user: CavopayAuthUser | null
   isAuthLoading: boolean
-  setUser: (user: PayMeAuthUser) => void
+  setUser: (user: CavopayAuthUser) => void
   logout: () => void
 }
 
-const STORAGE_KEY = 'payme.authUser'
+const STORAGE_KEY = 'cavopay.authUser'
 const AuthContext = createContext<AuthContextValue | null>(null)
+
+// Persist the profile WITHOUT the access token (M3: tokens live in memory
+// only). The token is mirrored into the api module's memory store.
+function persistUser(user: CavopayAuthUser) {
+  const { cavopaySessionToken: _dropped, ...rest } = user
+  setMemorySessionToken(user.cavopaySessionToken ?? null)
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(rest))
+}
+
+function clearPersistedUser() {
+  setMemorySessionToken(null)
+  localStorage.removeItem(STORAGE_KEY)
+}
 
 function isGoogleCallbackUrl() {
   return window.location.pathname === '/auth/callback'
@@ -34,24 +47,37 @@ function isGoogleCallbackUrl() {
     || window.location.hash.includes('id_token')
 }
 
-async function withPayMeSession(user: PayMeAuthUser): Promise<PayMeAuthUser> {
-  const session = await createPayMeSession({
-    authProvider: user.authProvider,
-    providerUserId: user.providerUserId,
-    email: user.email,
-    displayName: user.displayName,
-    userKey: user.userKey,
+async function withCavopaySession(user: CavopayAuthUser): Promise<CavopayAuthUser> {
+  // The Google credential (ID token or access token) is verified server-side
+  // via Google tokeninfo. The backend-derived userKey is authoritative —
+  // client-declared identity is never trusted.
+  const session = await createCavopaySession({
     userToken: user.userToken,
+    displayName: user.displayName,
   })
+  const verifiedEmail = session.userKey.replace(/^email:/, '')
   return {
     ...user,
-    paymeSessionToken: session.token,
-    paymeSessionExpiresAt: session.expiresAt,
+    userKey: session.userKey,
+    email: verifiedEmail || user.email,
+    cavopaySessionToken: session.token,
+    cavopaySessionExpiresAt: session.expiresAt,
+  }
+}
+
+async function refreshStoredSession(user: CavopayAuthUser): Promise<CavopayAuthUser> {
+  // Silent re-login via the HttpOnly refresh cookie — no identity proof needed
+  // because the cookie itself is the proof.
+  const session = await refreshCavopaySession()
+  return {
+    ...user,
+    cavopaySessionToken: session.token,
+    cavopaySessionExpiresAt: session.expiresAt,
   }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUserState] = useState<PayMeAuthUser | null>(() => {
+  const [user, setUserState] = useState<CavopayAuthUser | null>(() => {
     const stored = localStorage.getItem(STORAGE_KEY)
     if (!stored) return null
     try {
@@ -82,7 +108,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!providerUserId) throw new Error('Google login did not return a user id')
         const email = result?.oAuthInfo?.socialUserInfo?.email
         if (!email) throw new Error('Google login did not return an email address')
-        const nextUser = await withPayMeSession({
+        const nextUser = await withCavopaySession({
           authProvider: 'google',
           providerUserId,
           userKey: buildGoogleUserKey(email),
@@ -94,7 +120,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           refreshToken: result.refreshToken,
         })
         setUserState(nextUser)
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(nextUser))
+        persistUser(nextUser)
         navigate('/dashboard', { replace: true })
       })
       .catch((error) => {
@@ -112,50 +138,58 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isAuthLoading,
     setUser: (nextUser) => {
       setUserState(nextUser)
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(nextUser))
-      if (!nextUser.paymeSessionToken) {
-        withPayMeSession(nextUser)
+      persistUser(nextUser)
+      if (!nextUser.cavopaySessionToken) {
+        refreshStoredSession(nextUser)
           .then((sessionUser) => {
             setUserState(sessionUser)
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(sessionUser))
+            persistUser(sessionUser)
           })
           .catch((error) => {
-            console.error('Cavopay session creation failed:', error)
+            console.error('Cavopay session refresh failed:', error)
+            setUserState(null)
+            clearPersistedUser()
           })
       }
     },
     logout: () => {
+      logoutCavopaySession()
       setUserState(null)
-      localStorage.removeItem(STORAGE_KEY)
-      localStorage.removeItem('payme.walletAddress')
-      if (user?.userKey) localStorage.removeItem(`payme.walletAddress:${user.userKey}`)
+      clearPersistedUser()
+      localStorage.removeItem('cavopay.walletAddress')
+      if (user?.userKey) localStorage.removeItem(`cavopay.walletAddress:${user.userKey}`)
     },
   }), [isAuthLoading, user])
 
   useEffect(() => {
-    if (!user || user.paymeSessionToken) return
+    if (!user || user.cavopaySessionToken) return
     let cancelled = false
-    withPayMeSession(user)
+    refreshStoredSession(user)
       .then((sessionUser) => {
         if (cancelled) return
         setUserState(sessionUser)
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(sessionUser))
+        persistUser(sessionUser)
       })
-      .catch((error) => console.error('Cavopay session refresh failed:', error))
+      .catch((error) => {
+        if (cancelled) return
+        console.error('Cavopay session refresh failed:', error)
+        setUserState(null)
+        clearPersistedUser()
+      })
     return () => { cancelled = true }
   }, [user])
 
   useEffect(() => {
     const handleSessionExpired = () => {
       setUserState(null)
-      localStorage.removeItem(STORAGE_KEY)
-      localStorage.removeItem('payme.walletAddress')
-      if (user?.userKey) localStorage.removeItem(`payme.walletAddress:${user.userKey}`)
+      clearPersistedUser()
+      localStorage.removeItem('cavopay.walletAddress')
+      if (user?.userKey) localStorage.removeItem(`cavopay.walletAddress:${user.userKey}`)
       navigate('/dashboard', { replace: true })
     }
 
-    window.addEventListener('payme:session-expired', handleSessionExpired)
-    return () => window.removeEventListener('payme:session-expired', handleSessionExpired)
+    window.addEventListener('cavopay:session-expired', handleSessionExpired)
+    return () => window.removeEventListener('cavopay:session-expired', handleSessionExpired)
   }, [navigate, user?.userKey])
 
   if (isAuthLoading) {
@@ -173,8 +207,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
-export function usePayMeAuth() {
+export function useCavopayAuth() {
   const ctx = useContext(AuthContext)
-  if (!ctx) throw new Error('usePayMeAuth must be used within AuthProvider')
+  if (!ctx) throw new Error('useCavopayAuth must be used within AuthProvider')
   return ctx
 }

@@ -1,5 +1,5 @@
-// PayMe contract ABI
-export const PAYME_ABI = [
+// Cavopay contract ABI
+export const CAVOPAY_ABI = [
   {
     name: 'pay',
     type: 'function',

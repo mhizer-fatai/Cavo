@@ -1,6 +1,10 @@
 const express = require("express");
 const { supabase, memStore } = require("../supabase");
 const { v4: uuidv4 } = require("uuid");
+const { isValidAddressForChain, normalizeAccountAddress } = require("../services/arc");
+const { requireCavopaySession, ownsWalletAddress } = require("../services/sessions");
+const { recordAuditEvent, getClientIp } = require("../services/audit");
+const { schemas, validateBody } = require("../middleware/validate");
 
 const router = express.Router();
 
@@ -14,8 +18,8 @@ const CHAIN_RPC = {
 };
 
 // ─── POST /api/payments ───────────────────────────────────────────────────────
-// Log a confirmed on-chain payment
-router.post("/", async (req, res) => {
+// Log a confirmed on-chain payment (authenticated: callers prove their session)
+router.post("/", requireCavopaySession, validateBody(schemas.paymentLog), async (req, res) => {
   try {
     const { linkId, payerAddress, recipientAddress, sourceChain, destinationChain, txHash, amount, token } = req.body;
     const normalizedSourceChain = sourceChain || "Arc_Testnet";
@@ -27,11 +31,12 @@ router.post("/", async (req, res) => {
       });
     }
 
-    // ─── Wallet address format check ──────────────────────────────────────────
+    // ─── Wallet address format check (chain-aware: Solana is base58) ──────────
     if (!/^0x[a-fA-F0-9]{40}$/i.test(payerAddress)) {
       return res.status(400).json({ error: "Invalid wallet address format" });
     }
-    if (recipientAddress && !/^0x[a-fA-F0-9]{40}$/i.test(recipientAddress)) {
+    const destChain = destinationChain || "Arc_Testnet";
+    if (recipientAddress && !isValidAddressForChain(destChain, recipientAddress)) {
       return res.status(400).json({ error: "Invalid recipient wallet address format" });
     }
 
@@ -76,7 +81,7 @@ router.post("/", async (req, res) => {
       id: uuidv4(),
       link_id: linkId || null,
       payer_address: payerAddress.toLowerCase(),
-      recipient_address: recipientAddress ? recipientAddress.toLowerCase() : null,
+      recipient_address: recipientAddress ? normalizeAccountAddress(destChain, recipientAddress) : null,
       source_chain: normalizedSourceChain,
       destination_chain: destinationChain || "Arc_Testnet",
       tx_hash: txHash,
@@ -92,6 +97,15 @@ router.post("/", async (req, res) => {
       memStore.payments.push(record);
     }
 
+    recordAuditEvent({
+      userKey: req.authUserKey || null,
+      action: "payment.log",
+      outcome: "ok",
+      ip: getClientIp(req),
+      userAgent: req.get("User-Agent"),
+      detail: { txHash, amount: amount ? String(amount).slice(0, 32) : null, token: token || "USDC" },
+    });
+
     return res.status(201).json(record);
   } catch (err) {
     console.error("Error logging payment:", err);
@@ -100,9 +114,12 @@ router.post("/", async (req, res) => {
 });
 
 // ─── GET /api/payments/creator/:address ───────────────────────────────────────
-// Fetch all payments received by a creator's wallet
-router.get("/creator/:address", async (req, res) => {
+// Financial history: the address must belong to the caller (M1).
+router.get("/creator/:address", requireCavopaySession, async (req, res) => {
   try {
+    if (!(await ownsWalletAddress(req.authUserKey, req.params.address))) {
+      return res.status(403).json({ error: "History does not belong to this Cavopay account" });
+    }
     const address = req.params.address.toLowerCase();
 
     let records;
@@ -145,9 +162,12 @@ router.get("/creator/:address", async (req, res) => {
 });
 
 // ─── GET /api/payments/payer/:address ─────────────────────────────────────────
-// Fetch all payments made by a specific wallet
-router.get("/payer/:address", async (req, res) => {
+// Financial history: the address must belong to the caller (M1).
+router.get("/payer/:address", requireCavopaySession, async (req, res) => {
   try {
+    if (!(await ownsWalletAddress(req.authUserKey, req.params.address))) {
+      return res.status(403).json({ error: "History does not belong to this Cavopay account" });
+    }
     const address = req.params.address.toLowerCase();
 
     let records;

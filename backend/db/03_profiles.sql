@@ -1,4 +1,4 @@
--- Public PayMe usernames and their receiving wallets.
+-- Public Cavo usernames and their receiving wallets.
 CREATE TABLE public.profiles (
   username TEXT PRIMARY KEY,
   account_id UUID REFERENCES public.accounts(id) ON DELETE SET NULL,

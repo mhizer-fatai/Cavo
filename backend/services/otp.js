@@ -1,6 +1,6 @@
 const crypto = require("crypto");
 const { supabase, memStore } = require("../supabase");
-const { sendEmail } = require("./emailSenderService");
+const { sendEmail } = require("./mailer");
 
 const OTP_EXPIRES_MINUTES = Number(process.env.OTP_EXPIRES_MINUTES || 10);
 const OTP_MAX_ATTEMPTS = Number(process.env.OTP_MAX_ATTEMPTS || 5);

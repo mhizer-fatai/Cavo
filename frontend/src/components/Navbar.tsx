@@ -1,12 +1,12 @@
 import { Link } from 'react-router-dom'
 import { useLocation } from 'react-router-dom'
-import { usePayMeAuth } from '../context/AuthContext'
+import { useCavopayAuth } from '../context/AuthContext'
 import WalletButton from './WalletButton'
 
 export default function Navbar({ username }: { username?: string }) {
-  const { user } = usePayMeAuth()
+  const { user } = useCavopayAuth()
   const location = useLocation()
-  const isLoggedIn = !!user?.paymeSessionToken
+  const isLoggedIn = !!user?.cavopaySessionToken
   const isDashboard = location.pathname.startsWith('/dashboard')
 
   return (

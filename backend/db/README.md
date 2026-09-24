@@ -1,6 +1,6 @@
-# PayMe Database Schema
+# Cavo Database Schema
 
-This folder breaks the PayMe database into small SQL files by responsibility.
+This folder breaks the Cavo database into small SQL files by responsibility.
 
 Run order:
 
@@ -13,9 +13,13 @@ Run order:
 7. `06_email_login_codes.sql`
 8. `07_indexes.sql`
 9. `08_row_level_security.sql`
+10. `09_swaps.sql`
+
+`10_rename_legacy_tables.sql` is a one-off migration for databases created before the
+Cavo rename; fresh installs should skip it.
 
 For Supabase SQL editor, use the combined script:
 
-`backend/scripts/payme_database.sql`
+`backend/scripts/cavo_database.sql`
 
 The combined script contains the same SQL as these files, in the same order.

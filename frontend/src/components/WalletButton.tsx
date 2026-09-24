@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
-import { usePayMeAuth } from '../context/AuthContext'
-import { loginWithGoogle } from '../lib/circleAuth'
-import { buildGoogleUserKey, circleUserIdFromUserKey } from '../lib/devIdentity'
-import { createPayMeSession, getDeveloperControlledWallet, requestPayMeEmailCode, verifyPayMeEmailCode } from '../lib/api'
+import { useCavopayAuth } from '../context/AuthContext'
+import { loginWithGoogle } from '../lib/google'
+import { circleUserIdFromUserKey } from '../lib/identity'
+import { createCavopaySession, getDeveloperControlledWallet, requestCavopayEmailCode, verifyCavopayEmailCode } from '../lib/api'
 import { Copy, LogOut, Mail } from 'lucide-react'
 
 interface Props {
@@ -14,7 +14,7 @@ interface Props {
 }
 
 export default function WalletButton({ className = '', username }: Props) {
-  const { user, setUser, logout } = usePayMeAuth()
+  const { user, setUser, logout } = useCavopayAuth()
   const navigate = useNavigate()
   const [showModal, setShowModal] = useState(false)
   const [loginStep, setLoginStep] = useState<'methods' | 'email'>('methods')
@@ -54,7 +54,7 @@ export default function WalletButton({ className = '', username }: Props) {
     setEmailLoading(true)
     setLoginError(null)
     try {
-      const result = await requestPayMeEmailCode(normalizedEmail)
+      const result = await requestCavopayEmailCode(normalizedEmail)
       setEmailCode('')
       setEmailCodeSentTo(result.email)
       setEmailCooldown(result.cooldownSeconds || 60)
@@ -71,15 +71,15 @@ export default function WalletButton({ className = '', username }: Props) {
     setEmailLoading(true)
     setLoginError(null)
     try {
-      const result = await verifyPayMeEmailCode({ email: normalizedEmail, code: emailCode })
+      const result = await verifyCavopayEmailCode({ email: normalizedEmail, code: emailCode })
       setUser({
         authProvider: 'email',
         providerUserId: result.providerUserId,
         userKey: result.userKey,
         email: result.email,
         circleUserId: circleUserIdFromUserKey(result.userKey),
-        paymeSessionToken: result.session.token,
-        paymeSessionExpiresAt: result.session.expiresAt,
+        cavopaySessionToken: result.session.token,
+        cavopaySessionExpiresAt: result.session.expiresAt,
       })
       finishLogin()
     } catch (err: any) {
@@ -89,7 +89,7 @@ export default function WalletButton({ className = '', username }: Props) {
     }
   }
 
-  const walletStorageKey = user ? `payme.walletAddress:${user.userKey}` : 'payme.walletAddress'
+  const walletStorageKey = user ? `cavopay.walletAddress:${user.userKey}` : 'cavopay.walletAddress'
 
   const refreshWalletAddress = async () => {
     if (!user) return null
@@ -111,12 +111,12 @@ export default function WalletButton({ className = '', username }: Props) {
   useEffect(() => {
     if (!user) return
     refreshWalletAddress().catch(console.error)
-  }, [user?.userKey, user?.paymeSessionToken])
+  }, [user?.userKey, user?.cavopaySessionToken])
 
   useEffect(() => {
     if (!showDropdown || !user || walletAddress) return
     refreshWalletAddress().catch(console.error)
-  }, [showDropdown, user?.userKey, user?.paymeSessionToken, walletAddress])
+  }, [showDropdown, user?.userKey, user?.cavopaySessionToken, walletAddress])
 
   useEffect(() => {
     const handleWalletAddressUpdate = (event: Event) => {
@@ -125,8 +125,8 @@ export default function WalletButton({ className = '', username }: Props) {
       setWalletAddress(detail.walletAddress)
       localStorage.setItem(walletStorageKey, detail.walletAddress)
     }
-    window.addEventListener('payme:wallet-address-updated', handleWalletAddressUpdate as EventListener)
-    return () => window.removeEventListener('payme:wallet-address-updated', handleWalletAddressUpdate as EventListener)
+    window.addEventListener('cavopay:wallet-address-updated', handleWalletAddressUpdate as EventListener)
+    return () => window.removeEventListener('cavopay:wallet-address-updated', handleWalletAddressUpdate as EventListener)
   }, [user?.userKey, walletStorageKey])
 
   // Reset cached Cavopay wallet address on sign out.
@@ -222,7 +222,7 @@ export default function WalletButton({ className = '', username }: Props) {
   return (
     <>
       <button
-        id="payme-login-btn"
+        id="cavopay-login-btn"
         className={`btn btn-primary btn-sm ${className}`}
         onClick={() => {
           setLoginStep('methods')
@@ -258,7 +258,7 @@ export default function WalletButton({ className = '', username }: Props) {
                   setGoogleLoading(false)
                 }, 45000)
                 try {
-                  window.addEventListener('payme:google-login-complete', ((event: Event) => {
+                  window.addEventListener('cavopay:google-login-complete', ((event: Event) => {
                     window.clearTimeout(loginWatchdog)
                     const detail = (event as CustomEvent).detail
                     if (detail?.error) {
@@ -280,27 +280,22 @@ export default function WalletButton({ className = '', username }: Props) {
                       setGoogleLoading(false)
                       return
                     }
-                    const userKey = buildGoogleUserKey(email)
-                    createPayMeSession({
-                      authProvider: 'google',
-                      providerUserId,
-                      userKey,
-                      email,
-                      displayName: result?.oAuthInfo?.socialUserInfo?.name,
+                    createCavopaySession({
                       userToken: result.userToken,
+                      displayName: result?.oAuthInfo?.socialUserInfo?.name,
                     }).then((session) => {
                       setUser({
                         authProvider: 'google',
                         providerUserId,
-                        userKey,
-                        email,
+                        userKey: session.userKey,
+                        email: session.userKey.replace(/^email:/, '') || email,
                         displayName: result?.oAuthInfo?.socialUserInfo?.name,
-                        circleUserId: circleUserIdFromUserKey(userKey),
+                        circleUserId: circleUserIdFromUserKey(session.userKey),
                         userToken: result.userToken,
                         encryptionKey: result.encryptionKey,
                         refreshToken: result.refreshToken,
-                        paymeSessionToken: session.token,
-                        paymeSessionExpiresAt: session.expiresAt,
+                        cavopaySessionToken: session.token,
+                        cavopaySessionExpiresAt: session.expiresAt,
                       })
                       finishLogin()
                     }).catch((error) => {

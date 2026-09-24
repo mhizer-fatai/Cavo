@@ -6,10 +6,10 @@ import { AlertCircle, Check, CheckCircle2, Copy, ExternalLink, RefreshCw, Shield
 import { getProfile, getTokenTransfers, logPayment, type Profile } from '../lib/api'
 import PaymentWalletButton from '../components/PaymentWalletButton'
 import PaymentSuccessCelebration from '../components/PaymentSuccessCelebration'
-import { ARC_TESTNET_CHAIN, PAYMENT_SOURCE_CHAINS, TOKENS, arcTestnet, getPaymentSourceChain, type PaymentSourceChain } from '../lib/config'
+import { ARC_TESTNET_CHAIN, CAVOPAYNT_SOURCE_CHAINS, TOKENS, arcTestnet, getPaymentSourceChain, type PaymentSourceChain } from '../lib/config'
 import { ERC20_ABI } from '../lib/contracts'
 import { ensureWalletChain, waitForHash } from '../lib/transactions'
-import { bridgePaymentToArc } from '../lib/cctpPayments'
+import { bridgePaymentToArc } from '../lib/bridge'
 
 function shorten(address: string) {
   return `${address.slice(0, 8)}...${address.slice(-6)}`
@@ -284,7 +284,7 @@ export default function ProfilePage() {
             <div className="form-group">
               <label className="form-label">Pay from network</label>
               <select className="form-input" value={sourceChain} disabled={tokenSymbol === 'EURC'} onChange={event => setSourceChain(event.target.value as PaymentSourceChain)}>
-                {PAYMENT_SOURCE_CHAINS.map(chain => <option key={chain.value} value={chain.value}>{chain.label}</option>)}
+                {CAVOPAYNT_SOURCE_CHAINS.map(chain => <option key={chain.value} value={chain.value}>{chain.label}</option>)}
               </select>
               <p className="checkout-helper">{tokenSymbol === 'EURC' ? 'EURC is Arc-only right now.' : 'Recipient settles on Arc Testnet.'}</p>
             </div>

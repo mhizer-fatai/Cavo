@@ -22,10 +22,19 @@ type PaymentSuccessCelebrationProps = {
   explorerUrl?: string
   onClose: () => void
   onSendAnother?: () => void
+  variant?: 'send' | 'swap' | 'earn'
+  swapInAmount?: string
+  swapInToken?: string
+  earnMode?: 'deposit' | 'withdraw'
+  earnShares?: string
+  earnShareSymbol?: string
+  destinationLabel?: string
+  repeatLabel?: string
 }
 
 /**
  * Reusable celebration page with birthday-style confetti and receipt card.
+ * Supports a 'send' variant (default) and a 'swap' variant.
  */
 export default function PaymentSuccessCelebration({
   amount,
@@ -35,15 +44,25 @@ export default function PaymentSuccessCelebration({
   explorerUrl,
   onClose,
   onSendAnother,
+  variant = 'send',
+  swapInAmount,
+  swapInToken,
+  earnMode,
+  earnShares,
+  earnShareSymbol,
+  destinationLabel,
+  repeatLabel,
 }: PaymentSuccessCelebrationProps) {
+  const isSwap = variant === 'swap'
+  const isEarn = variant === 'earn'
   const [pieces, setPieces] = useState<ConfettiPiece[]>([])
   const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     const shapes: Array<'circle' | 'square' | 'triangle'> = ['circle', 'square', 'triangle']
     const colors = [
-      '#FFC700', '#FF0055', '#00FF66', '#00E5FF', '#FF00AA', 
-      '#9900FF', '#FF5E00', '#FFEC00', '#00FFCC', '#FF0077'
+      '#0E6B4E', '#2F8F6B', '#63B394', '#D9B65A', '#C9A227',
+      '#5B6B63', '#8FA69B', '#9A6A1F', '#B3362B', '#E4E9E6',
     ]
 
     const arr: ConfettiPiece[] = []
@@ -127,23 +146,72 @@ export default function PaymentSuccessCelebration({
           <CheckCircle2 size={36} />
         </div>
 
-        <h2 style={{ fontSize: 24, fontWeight: 800, marginBottom: 6, color: '#fff' }}>Payment Sent!</h2>
+        <h2 style={{ fontSize: 24, fontWeight: 800, marginBottom: 6, color: 'var(--ink)' }}>
+          {isSwap ? 'Swap Complete!' : isEarn ? (earnMode === 'withdraw' ? 'Withdrawal Complete!' : 'Deposit Complete!') : 'Payment Sent!'}
+        </h2>
         <p style={{ color: 'var(--text2)', fontSize: 14, marginBottom: 24 }}>
-          Your payment of {amount} {token} was successfully processed.
+          {isSwap && swapInAmount && swapInToken
+            ? `You swapped ${swapInAmount} ${swapInToken} for ${amount} ${token}.`
+            : isEarn && earnShares && earnShareSymbol
+              ? earnMode === 'withdraw'
+                ? `You withdrew ${amount} ${token} from ${earnShareSymbol}.${destinationLabel ? ` Bridging to ${destinationLabel} via CCTP.` : ''}`
+                : `You deposited ${amount} ${token} for ${earnShares} ${earnShareSymbol}.`
+              : `Your payment of ${amount} ${token} was successfully processed.`}
         </p>
 
         {/* Receipt table */}
         <div className="tx-box">
-          <div className="tx-label">Payment Receipt</div>
+          <div className="tx-label">{isSwap ? 'Swap Receipt' : isEarn ? 'Earn Receipt' : 'Payment Receipt'}</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
-              <span style={{ color: 'var(--text3)' }}>Recipient</span>
-              <span style={{ color: 'var(--text2)', fontWeight: 600 }}>{formatAddress(recipient)}</span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
-              <span style={{ color: 'var(--text3)' }}>Amount</span>
-              <span style={{ color: 'var(--text2)', fontWeight: 600 }}>{amount} {token}</span>
-            </div>
+            {isEarn && earnShares && earnShareSymbol ? (
+              <>
+                {earnMode === 'withdraw' ? (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                      <span style={{ color: 'var(--text3)' }}>Shares burned</span>
+                      <span style={{ color: 'var(--text2)', fontWeight: 600 }}>{earnShares} {earnShareSymbol}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                      <span style={{ color: 'var(--text3)' }}>Received</span>
+                      <span style={{ color: 'var(--text2)', fontWeight: 600 }}>{amount} {token}</span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                      <span style={{ color: 'var(--text3)' }}>Deposited</span>
+                      <span style={{ color: 'var(--text2)', fontWeight: 600 }}>{amount} {token}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                      <span style={{ color: 'var(--text3)' }}>Shares received</span>
+                      <span style={{ color: 'var(--text2)', fontWeight: 600 }}>{earnShares} {earnShareSymbol}</span>
+                    </div>
+                  </>
+                )}
+              </>
+            ) : isSwap && swapInAmount && swapInToken ? (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                  <span style={{ color: 'var(--text3)' }}>Swapped</span>
+                  <span style={{ color: 'var(--text2)', fontWeight: 600 }}>{swapInAmount} {swapInToken}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                  <span style={{ color: 'var(--text3)' }}>Received</span>
+                  <span style={{ color: 'var(--text2)', fontWeight: 600 }}>{amount} {token}</span>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                  <span style={{ color: 'var(--text3)' }}>Recipient</span>
+                  <span style={{ color: 'var(--text2)', fontWeight: 600 }}>{formatAddress(recipient)}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                  <span style={{ color: 'var(--text3)' }}>Amount</span>
+                  <span style={{ color: 'var(--text2)', fontWeight: 600 }}>{amount} {token}</span>
+                </div>
+              </>
+            )}
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
               <span style={{ color: 'var(--text3)' }}>Settlement Network</span>
               <span style={{ color: 'var(--text2)', fontWeight: 600 }}>Arc Testnet</span>
@@ -174,7 +242,7 @@ export default function PaymentSuccessCelebration({
               className="btn btn-secondary btn-sm"
               style={{ flex: 1 }}
             >
-              Send Another
+              {repeatLabel || 'Send Another'}
             </button>
           ) : explorerUrl ? (
             <a

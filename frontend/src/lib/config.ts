@@ -54,12 +54,12 @@ export const MULTICHAIN_TOKENS = {
 
 export const ARC_TESTNET_CHAIN = 'Arc_Testnet'
 
-export const PAYME_SECURITY_QUESTIONS = [
+export const CAVOPAY_SECURITY_QUESTIONS = [
   'What city were you born in?',
   'What is the name of your first school?',
 ] as const
 
-export const PAYMENT_SOURCE_CHAINS = [
+export const CAVOPAYNT_SOURCE_CHAINS = [
   {
     value: 'Arc_Testnet',
     label: 'Arc Testnet',
@@ -98,17 +98,44 @@ export const PAYMENT_SOURCE_CHAINS = [
   },
 ] as const
 
-export type PaymentSourceChain = typeof PAYMENT_SOURCE_CHAINS[number]['value']
+export type PaymentSourceChain = typeof CAVOPAYNT_SOURCE_CHAINS[number]['value']
 
 export function getPaymentSourceChain(value: string) {
-  return PAYMENT_SOURCE_CHAINS.find(chain => chain.value === value) || PAYMENT_SOURCE_CHAINS[0]
+  return CAVOPAYNT_SOURCE_CHAINS.find(chain => chain.value === value) || CAVOPAYNT_SOURCE_CHAINS[0]
+}
+
+// Withdraw destinations: any EOA reachable via Circle CCTP (EVM + Solana).
+// Kept separate from the wagmi-bound list above because Solana has no viem chain.
+export const CCTP_WITHDRAW_CHAINS = [
+  { value: 'Arc_Testnet', label: 'Arc Testnet', explorer: 'https://testnet.arcscan.app/tx/', addressKind: 'evm' },
+  { value: 'Ethereum_Sepolia', label: 'Ethereum Sepolia', explorer: 'https://sepolia.etherscan.io/tx/', addressKind: 'evm' },
+  { value: 'Base_Sepolia', label: 'Base Sepolia', explorer: 'https://sepolia.basescan.org/tx/', addressKind: 'evm' },
+  { value: 'Arbitrum_Sepolia', label: 'Arbitrum Sepolia', explorer: 'https://sepolia.arbiscan.io/tx/', addressKind: 'evm' },
+  { value: 'Optimism_Sepolia', label: 'OP Sepolia', explorer: 'https://sepolia-optimism.etherscan.io/tx/', addressKind: 'evm' },
+  { value: 'Polygon_Amoy_Testnet', label: 'Polygon Amoy', explorer: 'https://amoy.polygonscan.com/tx/', addressKind: 'evm' },
+  { value: 'Avalanche_Fuji', label: 'Avalanche Fuji', explorer: 'https://testnet.snowtrace.io/tx/', addressKind: 'evm' },
+  { value: 'Unichain_Sepolia', label: 'Unichain Sepolia', explorer: 'https://sepolia.uniscan.xyz/tx/', addressKind: 'evm' },
+  { value: 'Solana_Devnet', label: 'Solana Devnet', explorer: 'https://explorer.solana.com/tx/', explorerSuffix: '?cluster=devnet', addressKind: 'solana' },
+] as const
+
+export function getWithdrawChain(value: string) {
+  return CCTP_WITHDRAW_CHAINS.find(chain => chain.value === value) || CCTP_WITHDRAW_CHAINS[0]
+}
+
+export function isValidWithdrawAddress(chainValue: string, address: string): boolean {
+  const chain = getWithdrawChain(chainValue)
+  const text = address.trim()
+  if (chain.addressKind === 'solana') {
+    return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(text)
+  }
+  return /^0x[a-fA-F0-9]{40}$/.test(text)
 }
 
 export type TokenSymbol = keyof typeof TOKENS
 
 // ─── Contract ─────────────────────────────────────────────────────────────────
-export const PAYME_CONTRACT_ADDRESS = (
-  import.meta.env.VITE_PAYME_CONTRACT_ADDRESS ||
+export const CAVOPAY_CONTRACT_ADDRESS = (
+  import.meta.env.VITE_CAVOPAY_CONTRACT_ADDRESS ||
   '0xE5DEcbeEED2CFc9C59999F902Cc78Bb5fE96aC4E'
 ) as `0x${string}`
 

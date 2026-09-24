@@ -17,7 +17,7 @@ CREATE INDEX idx_profiles_account_id
 CREATE INDEX idx_profiles_owner_wallet
   ON public.profiles (owner_address);
 
-CREATE INDEX idx_profiles_payme_wallet
+CREATE INDEX idx_profiles_cavo_wallet
   ON public.profiles (wallet_address);
 
 CREATE INDEX idx_payment_links_creator
@@ -41,17 +41,17 @@ CREATE INDEX idx_payments_source_chain
 CREATE INDEX idx_payments_link
   ON public.payments (link_id);
 
-CREATE INDEX idx_payme_pin_approvals_user_key
-  ON public.payme_pin_approvals (user_key);
+CREATE INDEX idx_cavo_pin_approvals_user_key
+  ON public.cavo_pin_approvals (user_key);
 
-CREATE INDEX idx_payme_pin_approvals_expires_at
-  ON public.payme_pin_approvals (expires_at);
+CREATE INDEX idx_cavo_pin_approvals_expires_at
+  ON public.cavo_pin_approvals (expires_at);
 
-CREATE INDEX idx_payme_security_events_user_key
-  ON public.payme_security_events (user_key);
+CREATE INDEX idx_cavo_security_events_user_key
+  ON public.cavo_security_events (user_key);
 
-CREATE INDEX idx_payme_security_events_created_at
-  ON public.payme_security_events (created_at);
+CREATE INDEX idx_cavo_security_events_created_at
+  ON public.cavo_security_events (created_at);
 
 CREATE INDEX idx_email_login_codes_email
   ON public.email_login_codes (email);

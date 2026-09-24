@@ -1,7 +1,7 @@
 {
-  "name": "payme-contracts",
+  "name": "cavopay-contracts",
   "version": "1.0.0",
-  "description": "PayMe smart contracts for Arc network",
+  "description": "Cavopay smart contracts for Arc network",
   "scripts": {
     "compile": "hardhat compile",
     "deploy:testnet": "hardhat run scripts/deploy.js --network arc_testnet",

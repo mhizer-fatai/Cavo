@@ -1,4 +1,4 @@
-const DEV_IDENTITY_KEY = 'payme.circleIdentityVersion'
+const DEV_IDENTITY_KEY = 'cavopay.circleIdentityVersion'
 
 export function getDevIdentityVersion() {
   if (!import.meta.env.DEV) return 1
@@ -24,12 +24,12 @@ export function buildGoogleUserKey(email: string) {
 
 export function circleUserIdFromUserKey(userKey: string) {
   const normalized = userKey.toLowerCase().replace(/[^a-z0-9]/g, '_')
-  const candidate = `payme_${normalized}`
+  const candidate = `cavopay_${normalized}`
   if (candidate.length <= 49) return candidate
 
   let hash = 0
   for (let i = 0; i < normalized.length; i += 1) {
     hash = Math.imul(31, hash) + normalized.charCodeAt(i) | 0
   }
-  return `payme_${Math.abs(hash).toString(36)}_${normalized.slice(-24)}`.slice(0, 49)
+  return `cavopay_${Math.abs(hash).toString(36)}_${normalized.slice(-24)}`.slice(0, 49)
 }

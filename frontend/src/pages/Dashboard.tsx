@@ -13,44 +13,62 @@ import QuickActions from '../features/dashboard/QuickActions'
 import TransactionList, { type LedgerPayment, type LedgerTab } from '../features/dashboard/TransactionList'
 import ContactsPanel, { type ContactEntry, type ContactTab } from '../features/contacts/ContactsPanel'
 import SendPaymentModal, { type PendingSend, type SendStep, type SendToken } from '../features/send/SendPaymentModal'
+import WithdrawModal, { type WithdrawStep } from '../features/withdraw/WithdrawModal'
 import ReceiveModal from '../features/receive/ReceiveModal'
+import SwapModal, { type SwapStep, type SwapToken } from '../features/swap/SwapModal'
+import EarnModal, { type EarnMode, type EarnStep, type EarnToken } from '../features/earn/EarnModal'
+import EarnSection from '../features/earn/EarnSection'
 import type { BridgeStage } from '../components/BridgeStatusTimeline'
-import { ARC_TESTNET_CHAIN, PAYMENT_SOURCE_CHAINS, PAYME_SECURITY_QUESTIONS, TOKENS, getPaymentSourceChain } from '../lib/config'
+import { ARC_TESTNET_CHAIN, CAVOPAYNT_SOURCE_CHAINS, CAVOPAY_SECURITY_QUESTIONS, CCTP_WITHDRAW_CHAINS, TOKENS, getPaymentSourceChain, isValidWithdrawAddress } from '../lib/config'
 import {
-  approvePayMePinTransaction,
+  approveCavopayPinTransaction,
   bridgeDeveloperControlledTransfer,
   claimProfile,
   createDeveloperControlledWallet,
   createPaymentLink,
+  depositEarn,
+  executeSwap,
   getCreatorPayments,
   getDeveloperControlledWallet,
+  getEarnHistory,
+  getEarnPositions,
+  getEarnVaults,
   getPayerPayments,
-  getPayMePinStatus,
+  getCavopayPinStatus,
   getProfile,
   getProfileByWallet,
+  getSwapHistory,
+  getSwapQuote,
   getTokenBalance,
   getTokenTransfers,
   getWalletTransactionStatus,
   logPayment,
   sendDeveloperControlledTransfer,
-  setupPayMePin,
+  setupCavopayPin,
   updateProfileAvatar,
+  withdrawEarn,
   type CircleWallet,
+  type EarnEvent,
+  type EarnPosition,
+  type EarnVault,
   type Payment,
   type Profile,
+  type SwapQuote,
+  type SwapRecord,
 } from '../lib/api'
-import { usePayMeAuth } from '../context/AuthContext'
+import { useCavopayAuth } from '../context/AuthContext'
 
 type Section = 'dashboard' | 'history' | 'contacts' | 'links'
 
-const DESTINATION_CHAINS = PAYMENT_SOURCE_CHAINS.map(chain => ({
+const DESTINATION_CHAINS = CAVOPAYNT_SOURCE_CHAINS.map(chain => ({
   value: chain.value,
   label: chain.label,
 }))
 
 const shorten = (address?: string | null) => {
   if (!address) return 'Unknown'
-  if (!address.startsWith('0x') || address.length < 12) return address
+  if (address.startsWith('@')) return address
+  if (address.length < 12) return address
   return `${address.slice(0, 6)}...${address.slice(-4)}`
 }
 
@@ -66,7 +84,9 @@ const fmtDate = (iso: string) =>
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
 const getDestinationChainLabel = (value?: string) =>
-  DESTINATION_CHAINS.find(chain => chain.value === value)?.label || 'Arc Testnet'
+  DESTINATION_CHAINS.find(chain => chain.value === value)?.label
+  || CCTP_WITHDRAW_CHAINS.find(chain => chain.value === value)?.label
+  || 'Arc Testnet'
 
 function getTxHash(value: any): string | undefined {
   if (!value || typeof value !== 'object') return undefined
@@ -117,6 +137,118 @@ function mergePayments(logged: LedgerPayment[], onchain: LedgerPayment[]) {
   return merged.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
 }
 
+/**
+ * Combine the two on-chain legs of a swap (outgoing tokenIn + incoming tokenOut
+ * sharing one tx hash) into a single 'swap' row. Without this, a swap shows up
+ * as a confusing standalone "received" row — and mergePayments would silently
+ * drop one of the two legs because they share a tx hash.
+ */
+function combineSwapLegs(rows: LedgerPayment[], selfAddress: string): { swaps: LedgerPayment[]; rest: LedgerPayment[] } {
+  const self = normalizeAddress(selfAddress)
+  const byHash = new Map<string, LedgerPayment[]>()
+  for (const row of rows) {
+    const key = row.tx_hash ? row.tx_hash.toLowerCase() : `nohash-${row.id}`
+    const list = byHash.get(key) || []
+    list.push(row)
+    byHash.set(key, list)
+  }
+
+  const swaps: LedgerPayment[] = []
+  const rest: LedgerPayment[] = []
+  for (const [key, group] of byHash) {
+    if (group.length < 2 || !group[0].tx_hash) {
+      rest.push(...group)
+      continue
+    }
+    const outLeg = group
+      .filter(item => item.type === 'sent')
+      .sort((a, b) => Number(b.amount) - Number(a.amount))[0]
+    const inLeg = group
+      .filter(item => item.type === 'received')
+      .sort((a, b) => Number(b.amount) - Number(a.amount))[0]
+    if (outLeg && inLeg && outLeg.token !== inLeg.token) {
+      const createdAt = group.map(item => item.created_at).sort()[0]
+      swaps.push({
+        ...outLeg,
+        id: `swap-${key}`,
+        payer_address: self,
+        recipient_address: self,
+        type: 'swap',
+        created_at: createdAt,
+        swap: {
+          tokenIn: outLeg.token,
+          amountIn: Number(outLeg.amount),
+          tokenOut: inLeg.token,
+          amountOut: Number(inLeg.amount),
+        },
+      })
+    } else {
+      rest.push(...group)
+    }
+  }
+  return { swaps, rest }
+}
+
+/** A logged row where payer == recipient == self is a swap marker, never a receive. */
+function isSelfSwapRow(payment: { tx_hash?: string | null; payer_address?: string | null; recipient_address?: string | null }, selfAddress: string): boolean {
+  return !!payment.tx_hash
+    && normalizeAddress(payment.payer_address) === normalizeAddress(selfAddress)
+    && normalizeAddress(payment.recipient_address) === normalizeAddress(selfAddress)
+}
+
+/** Map a backend swap record to one unique 'swap' ledger row. */
+function swapRecordToRow(record: SwapRecord, selfAddress: string): LedgerPayment {
+  const tokenIn = String(record.token_in || '').toUpperCase()
+  const tokenOut = String(record.token_out || '').toUpperCase()
+  return {
+    id: `swap-record-${record.id}`,
+    link_id: '',
+    payer_address: selfAddress,
+    recipient_address: selfAddress,
+    source_chain: ARC_TESTNET_CHAIN,
+    destination_chain: ARC_TESTNET_CHAIN,
+    tx_hash: record.tx_hash || '',
+    amount: Number(record.amount_in) || 0,
+    token: tokenIn,
+    created_at: record.created_at,
+    type: 'swap',
+    swap: {
+      tokenIn,
+      amountIn: Number(record.amount_in) || 0,
+      tokenOut,
+      amountOut: record.amount_out != null ? Number(record.amount_out) : null,
+    },
+  }
+}
+
+const SWAP_LEG_MATCH_WINDOW_MS = 10 * 60 * 1000
+
+function amountsEqual(a: number, b: number) {
+  return Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) < 1e-6
+}
+
+/**
+ * Check whether an on-chain leg is already represented by a backend swap record
+ * (same tx hash, or same token + amount within minutes of the swap). Consumed
+ * legs are hidden so a swap never also shows up as a stray "received" row.
+ */
+function onchainLegBelongsToSwap(leg: LedgerPayment, swapRows: LedgerPayment[]): boolean {
+  if (leg.type === 'swap') return false
+  return swapRows.some(row => {
+    if (row.tx_hash && leg.tx_hash && row.tx_hash.toLowerCase() === leg.tx_hash.toLowerCase()) return true
+    const legs = row.swap
+    if (!legs) return false
+    const legTime = new Date(leg.created_at).getTime()
+    const rowTime = new Date(row.created_at).getTime()
+    if (!Number.isFinite(legTime) || !Number.isFinite(rowTime)) return false
+    if (Math.abs(legTime - rowTime) > SWAP_LEG_MATCH_WINDOW_MS) return false
+    const legAmount = Number(leg.amount)
+    if (leg.type === 'sent' && leg.token === legs.tokenIn && amountsEqual(legAmount, Number(legs.amountIn))) return true
+    if (leg.type === 'received' && legs.amountOut != null && leg.token === legs.tokenOut && amountsEqual(legAmount, Number(legs.amountOut))) return true
+    return false
+  })
+}
+
 function resizeAvatarFile(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     if (!file.type.startsWith('image/')) {
@@ -153,9 +285,9 @@ function resizeAvatarFile(file: File): Promise<string> {
 }
 
 export default function DashboardPage() {
-  const { user: authUser } = usePayMeAuth()
+  const { user: authUser } = useCavopayAuth()
   const navigate = useNavigate()
-  const isLoggedIn = !!authUser?.paymeSessionToken
+  const isLoggedIn = !!authUser?.cavopaySessionToken
   const activeUserKey = authUser?.userKey || ''
   const loginLabel = authUser?.email || ''
 
@@ -175,7 +307,9 @@ export default function DashboardPage() {
   const [ledgerLoading, setLedgerLoading] = useState(false)
   const [receivedPayments, setReceivedPayments] = useState<LedgerPayment[]>([])
   const [sentPayments, setSentPayments] = useState<LedgerPayment[]>([])
+  const [earnPayments, setEarnPayments] = useState<LedgerPayment[]>([])
   const [ledgerTab, setLedgerTab] = useState<LedgerTab>('all')
+  const [miniTab, setMiniTab] = useState<LedgerTab>('all')
   const [historyVisibleCount, setHistoryVisibleCount] = useState(8)
   const [selectedPayment, setSelectedPayment] = useState<LedgerPayment | null>(null)
 
@@ -198,11 +332,11 @@ export default function DashboardPage() {
   const [destinationChain, setDestinationChain] = useState(ARC_TESTNET_CHAIN)
   const [sendStep, setSendStep] = useState<SendStep>('details')
   const [pendingSend, setPendingSend] = useState<PendingSend | null>(null)
-  const [paymePin, setPaymePin] = useState('')
+  const [cavopayPin, setCavopayPin] = useState('')
   const [confirmPin, setConfirmPin] = useState('')
   const [securityAnswerOne, setSecurityAnswerOne] = useState('')
   const [securityAnswerTwo, setSecurityAnswerTwo] = useState('')
-  const [hasPayMePin, setHasPayMePin] = useState<boolean | null>(null)
+  const [hasCavopayPin, setHasCavopayPin] = useState<boolean | null>(null)
   const [showPinSetupModal, setShowPinSetupModal] = useState(false)
   const [pinSetupLoading, setPinSetupLoading] = useState(false)
   const [pinSetupError, setPinSetupError] = useState<string | null>(null)
@@ -212,39 +346,123 @@ export default function DashboardPage() {
   const [sendSuccess, setSendSuccess] = useState<{ amount: string; token: string; recipient: string; txHash?: string } | null>(null)
   const [scannedRecipient, setScannedRecipient] = useState<Profile | null>(null)
 
+  const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false)
+  const [withdrawStep, setWithdrawStep] = useState<WithdrawStep>('details')
+  const [withdrawAddress, setWithdrawAddress] = useState('')
+  const [withdrawChain, setWithdrawChain] = useState<string>(ARC_TESTNET_CHAIN)
+  const [withdrawAmount, setWithdrawAmount] = useState('')
+  const [withdrawError, setWithdrawError] = useState<string | null>(null)
+  const [isWithdrawing, setIsWithdrawing] = useState(false)
+  const [withdrawSuccess, setWithdrawSuccess] = useState<{ amount: string; recipient: string; chain: string; txHash?: string } | null>(null)
+
+  const [isSwapModalOpen, setIsSwapModalOpen] = useState(false)
+  const [swapStep, setSwapStep] = useState<SwapStep>('details')
+  const [swapAmount, setSwapAmount] = useState('')
+  const [swapTokenIn, setSwapTokenIn] = useState<SwapToken>('USDC')
+  const [swapQuote, setSwapQuote] = useState<SwapQuote | null>(null)
+  const [quoteLoading, setQuoteLoading] = useState(false)
+  const [quoteError, setQuoteError] = useState<string | null>(null)
+  const [swapError, setSwapError] = useState<string | null>(null)
+  const [isSwapping, setIsSwapping] = useState(false)
+  const [swapSuccess, setSwapSuccess] = useState<{
+    amountIn: string
+    tokenIn: string
+    amountOut: string
+    tokenOut: string
+    txHash?: string
+  } | null>(null)
+
+  const [isEarnModalOpen, setIsEarnModalOpen] = useState(false)
+  const [earnMode, setEarnMode] = useState<EarnMode>('deposit')
+  const [earnStep, setEarnStep] = useState<EarnStep>('details')
+  const [earnAmount, setEarnAmount] = useState('')
+  const [earnToken, setEarnToken] = useState<EarnToken>('USDC')
+  const [earnError, setEarnError] = useState<string | null>(null)
+  const [isEarning, setIsEarning] = useState(false)
+  const [earnVaults, setEarnVaults] = useState<EarnVault[]>([])
+  const [earnVaultsLoading, setEarnVaultsLoading] = useState(false)
+  const [earnPositions, setEarnPositions] = useState<EarnPosition[]>([])
+  const [earnSuccess, setEarnSuccess] = useState<{
+    mode: EarnMode
+    amount: string
+    token: string
+    shares: string
+    shareSymbol: string
+    txHash?: string
+    destinationChain?: string
+    destinationLabel?: string
+  } | null>(null)
+
   const [contactTab, setContactTab] = useState<ContactTab>('recent')
   const [favorites, setFavorites] = useState<ContactEntry[]>([])
   const refreshTimer = useRef<number | null>(null)
+  // Stale-while-revalidate ledger sync: render cache instantly, sync in background.
+  const [ledgerSyncing, setLedgerSyncing] = useState(false)
+  const ledgerHydrated = useRef(false)
+  const ledgerRefreshInFlight = useRef(false)
+  const lastLedgerRefreshAt = useRef(0)
+  const LEDGER_MIN_REFRESH_MS = 15000
+  const quoteRequestSeq = useRef(0)
   const profileLookupInFlight = useRef<Set<string>>(new Set())
   const avatarInputRef = useRef<HTMLInputElement | null>(null)
 
-  const paymeWalletAddress = circleWallet?.walletAddress || ''
+  const cavopayWalletAddress = circleWallet?.walletAddress || ''
 
   const allPayments = useMemo(() => {
     const received = receivedPayments.map(payment => ({ ...payment, type: 'received' as const }))
-    const sent = sentPayments.map(payment => ({ ...payment, type: 'sent' as const }))
-    const merged = mergePayments(received, sent)
+    const sent = sentPayments.map(payment => (
+      payment.type === 'swap' ? payment : { ...payment, type: 'sent' as const }
+    ))
+    const earn = earnPayments.map(payment => ({ ...payment, type: 'earn' as const }))
+    const merged = mergePayments(mergePayments(received, sent), earn)
     if (ledgerTab === 'received') return merged.filter(payment => payment.type === 'received')
     if (ledgerTab === 'sent') return merged.filter(payment => payment.type === 'sent')
+    if (ledgerTab === 'swaps') return merged.filter(payment => payment.type === 'swap')
+    if (ledgerTab === 'earn') return merged.filter(payment => payment.type === 'earn')
     return merged
-  }, [ledgerTab, receivedPayments, sentPayments])
+  }, [ledgerTab, receivedPayments, sentPayments, earnPayments])
 
   const dashboardPayments = useMemo(() => mergePayments(
-    receivedPayments.map(payment => ({ ...payment, type: 'received' as const })),
-    sentPayments.map(payment => ({ ...payment, type: 'sent' as const })),
-  ), [receivedPayments, sentPayments])
+    mergePayments(
+      receivedPayments.map(payment => ({ ...payment, type: 'received' as const })),
+      sentPayments.map(payment => (
+        payment.type === 'swap' ? payment : { ...payment, type: 'sent' as const }
+      )),
+    ),
+    earnPayments.map(payment => ({ ...payment, type: 'earn' as const })),
+  ), [receivedPayments, sentPayments, earnPayments])
 
-  const favoritesKey = activeUserKey ? `payme.contacts.favorites:${activeUserKey}` : ''
+  // Swaps live inside sentPayments (money left the wallet) but get their own
+  // tab and counts so every transaction type stays specific.
+  const sentOnlyPayments = useMemo(
+    () => sentPayments.filter(payment => payment.type !== 'swap'),
+    [sentPayments],
+  )
+  const swapOnlyPayments = useMemo(
+    () => sentPayments.filter(payment => payment.type === 'swap'),
+    [sentPayments],
+  )
+
+  // Dashboard mini-list has its own tab state so it filters independently.
+  const miniPayments = useMemo(() => {
+    if (miniTab === 'received') return dashboardPayments.filter(payment => payment.type === 'received')
+    if (miniTab === 'sent') return dashboardPayments.filter(payment => payment.type === 'sent')
+    if (miniTab === 'swaps') return dashboardPayments.filter(payment => payment.type === 'swap')
+    if (miniTab === 'earn') return dashboardPayments.filter(payment => payment.type === 'earn')
+    return dashboardPayments
+  }, [dashboardPayments, miniTab])
+
+  const favoritesKey = activeUserKey ? `cavopay.contacts.favorites:${activeUserKey}` : ''
 
   const updateWalletAddressCache = (walletAddress: string) => {
     if (!authUser?.userKey || !walletAddress) return
-    localStorage.setItem(`payme.walletAddress:${authUser.userKey}`, walletAddress)
-    window.dispatchEvent(new CustomEvent('payme:wallet-address-updated', {
+    localStorage.setItem(`cavopay.walletAddress:${authUser.userKey}`, walletAddress)
+    window.dispatchEvent(new CustomEvent('cavopay:wallet-address-updated', {
       detail: { userKey: authUser.userKey, walletAddress },
     }))
   }
 
-  const getBalanceCacheKey = (walletAddress: string) => `payme.balances:${normalizeAddress(walletAddress)}`
+  const getBalanceCacheKey = (walletAddress: string) => `cavopay.balances:${normalizeAddress(walletAddress)}`
 
   const loadCachedBalances = (walletAddress: string) => {
     try {
@@ -262,6 +480,37 @@ export default function DashboardPage() {
       eurc,
       updatedAt: Date.now(),
     }))
+  }
+
+  const getLedgerCacheKey = (walletAddress: string) => `cavopay.ledger:${normalizeAddress(walletAddress)}`
+
+  const loadCachedLedger = (walletAddress: string): boolean => {
+    try {
+      const cached = JSON.parse(localStorage.getItem(getLedgerCacheKey(walletAddress)) || '{}')
+      if (Array.isArray(cached.received) && Array.isArray(cached.sent)) {
+        setReceivedPayments(cached.received)
+        setSentPayments(cached.sent)
+        if (Array.isArray(cached.earn)) setEarnPayments(cached.earn)
+        ledgerHydrated.current = true
+        return true
+      }
+    } catch {
+      // Bad cache should never block fresh loading.
+    }
+    return false
+  }
+
+  const saveLedgerCache = (walletAddress: string, received: LedgerPayment[], sent: LedgerPayment[], earn: LedgerPayment[]) => {
+    try {
+      localStorage.setItem(getLedgerCacheKey(walletAddress), JSON.stringify({
+        received,
+        sent,
+        earn,
+        updatedAt: Date.now(),
+      }))
+    } catch {
+      // Quota errors are non-fatal; the next sync simply refetches.
+    }
   }
 
   const refreshProfileMap = async (addresses: string[]) => {
@@ -333,18 +582,18 @@ export default function DashboardPage() {
   }
 
   const refreshBalances = async () => {
-    if (!paymeWalletAddress) return
+    if (!cavopayWalletAddress) return
     setBalanceLoading(true)
     try {
       const [usdc, eurc] = await Promise.all([
-        getTokenBalance(paymeWalletAddress, TOKENS.USDC.address),
-        getTokenBalance(paymeWalletAddress, TOKENS.EURC.address),
+        getTokenBalance(cavopayWalletAddress, TOKENS.USDC.address),
+        getTokenBalance(cavopayWalletAddress, TOKENS.EURC.address),
       ])
       const nextUsdc = Number(formatUnits(usdc, TOKENS.USDC.decimals)).toFixed(2)
       const nextEurc = Number(formatUnits(eurc, TOKENS.EURC.decimals)).toFixed(2)
       setUsdcDisplay(nextUsdc)
       setEurcDisplay(nextEurc)
-      saveBalanceCache(paymeWalletAddress, nextUsdc, nextEurc)
+      saveBalanceCache(cavopayWalletAddress, nextUsdc, nextEurc)
     } catch (error) {
       console.warn('Balance refresh failed:', error)
     } finally {
@@ -381,21 +630,111 @@ export default function DashboardPage() {
     })
   }
 
-  const refreshLedger = async () => {
-    if (!paymeWalletAddress) return
-    setLedgerLoading(true)
+  const refreshLedger = async (options?: { force?: boolean }) => {
+    if (!cavopayWalletAddress) return
+    // Stale-while-revalidate: skip overlapping or too-frequent syncs unless forced
+    // (e.g. right after a send/swap). The list keeps showing cached data meanwhile.
+    if (ledgerRefreshInFlight.current) return
+    if (!options?.force && Date.now() - lastLedgerRefreshAt.current < LEDGER_MIN_REFRESH_MS) return
+    ledgerRefreshInFlight.current = true
+    lastLedgerRefreshAt.current = Date.now()
+    // Full-page loader only on cold start with zero cached data; otherwise sync quietly.
+    const coldStart = !ledgerHydrated.current
+    if (coldStart) setLedgerLoading(true)
+    else setLedgerSyncing(true)
     try {
       const [creatorRows, payerRows, onchainRows] = await Promise.all([
-        getCreatorPayments(paymeWalletAddress),
-        getPayerPayments(paymeWalletAddress),
-        getOnchainTokenTransfers(paymeWalletAddress),
+        getCreatorPayments(cavopayWalletAddress),
+        getPayerPayments(cavopayWalletAddress),
+        getOnchainTokenTransfers(cavopayWalletAddress),
       ])
-      const receivedLogged = creatorRows.map(payment => ({ ...payment, type: 'received' as const }))
+      const swapRecords = activeUserKey
+        ? await getSwapHistory(activeUserKey).catch((): SwapRecord[] => [])
+        : []
+      const earnEvents = activeUserKey
+        ? await getEarnHistory(activeUserKey).catch((): EarnEvent[] => [])
+        : []
+      const receivedLogged = creatorRows
+        .filter(payment => !isSelfSwapRow(payment, cavopayWalletAddress))
+        .map(payment => ({ ...payment, type: 'received' as const }))
       const sentLogged = payerRows.map(payment => ({ ...payment, type: 'sent' as const }))
-      const receivedOnchain = onchainRows.filter(payment => payment.type === 'received')
-      const sentOnchain = onchainRows.filter(payment => payment.type === 'sent')
-      setReceivedPayments(mergePayments(receivedLogged, receivedOnchain))
-      setSentPayments(mergePayments(sentLogged, sentOnchain))
+      // Backend swap records are the source of truth: one record = one unique swap row.
+      const swapRows = swapRecords.map(record => swapRecordToRow(record, cavopayWalletAddress))
+      const unconsumedOnchain = onchainRows.filter(leg => !onchainLegBelongsToSwap(leg, swapRows))
+      const { swaps: onchainSwaps, rest: onchainRest } = combineSwapLegs(unconsumedOnchain, cavopayWalletAddress)
+
+      // Swaps recorded via logPayment have payer == recipient == self. They show up
+      // in BOTH the payer and creator endpoints, so collect candidates from both
+      // (deduped by hash) and mark them as swaps with both sides of the conversion.
+      const selfSwapCandidates = new Map<string, LedgerPayment>()
+      for (const payment of [...sentLogged, ...creatorRows]) {
+        if (!isSelfSwapRow(payment, cavopayWalletAddress)) continue
+        const key = String(payment.tx_hash).toLowerCase()
+        if (!selfSwapCandidates.has(key)) {
+          selfSwapCandidates.set(key, { ...payment, type: 'sent' as const })
+        }
+      }
+      const consumedSwapHashes = new Set<string>()
+      const loggedSwaps: LedgerPayment[] = []
+      const sentLoggedRest: LedgerPayment[] = []
+      for (const payment of sentLogged) {
+        if (selfSwapCandidates.has(String(payment.tx_hash || '').toLowerCase()) && payment.tx_hash) {
+          continue // handled via selfSwapCandidates below
+        }
+        sentLoggedRest.push(payment)
+      }
+      for (const payment of selfSwapCandidates.values()) {
+        const hash = String(payment.tx_hash).toLowerCase()
+        const match = onchainSwaps.find(item => item.tx_hash?.toLowerCase() === hash)
+        if (match) consumedSwapHashes.add(hash)
+        loggedSwaps.push({
+          ...payment,
+          id: `swap-log-${payment.id}`,
+          type: 'swap',
+          swap: {
+            tokenIn: payment.token,
+            amountIn: Number(payment.amount),
+            tokenOut: match?.swap?.tokenOut || (payment.token === 'USDC' ? 'EURC' : 'USDC'),
+            amountOut: match?.swap?.amountOut ?? null,
+          },
+        })
+      }
+
+      const remainingOnchainSwaps = onchainSwaps.filter(item => !item.tx_hash || !consumedSwapHashes.has(item.tx_hash.toLowerCase()))
+      const receivedOnchain = onchainRest.filter(payment => payment.type === 'received')
+      const sentOnchain = onchainRest.filter(payment => payment.type === 'sent')
+      const mergedReceived = mergePayments(receivedLogged, receivedOnchain)
+      const mergedSent = mergePayments([...swapRows, ...sentLoggedRest, ...loggedSwaps], [...sentOnchain, ...remainingOnchainSwaps])
+      // Earn events are first-class rows from our own ledger (never heuristics).
+      const earnRows: LedgerPayment[] = earnEvents.map(event => {
+        const token = String(event.token).toUpperCase()
+        const shareSymbol = token === 'USDC' ? 'alvUSDC' : 'alvEURC'
+        return {
+          id: `earn-${event.id}`,
+          link_id: '',
+          payer_address: cavopayWalletAddress,
+          recipient_address: event.destination_address || cavopayWalletAddress,
+          source_chain: ARC_TESTNET_CHAIN,
+          destination_chain: event.destination_chain || ARC_TESTNET_CHAIN,
+          tx_hash: event.bridge_tx_hash || event.tx_hash || '',
+          amount: Number(event.amount) || 0,
+          token,
+          created_at: event.created_at,
+          type: 'earn' as const,
+          earn: {
+            kind: event.kind,
+            token,
+            amount: Number(event.amount) || 0,
+            shares: Number(event.shares) || 0,
+            shareSymbol,
+          },
+        }
+      })
+      setReceivedPayments(mergedReceived)
+      setSentPayments(mergedSent)
+      setEarnPayments(earnRows)
+      saveLedgerCache(cavopayWalletAddress, mergedReceived, mergedSent, earnRows)
+      ledgerHydrated.current = true
 
       const counterpartyAddresses = [...receivedLogged, ...sentLogged, ...onchainRows].flatMap(payment => [
         payment.payer_address,
@@ -406,15 +745,17 @@ export default function DashboardPage() {
     } catch (error) {
       console.warn('Ledger refresh failed:', error)
     } finally {
+      ledgerRefreshInFlight.current = false
       setLedgerLoading(false)
+      setLedgerSyncing(false)
     }
   }
 
-  const refreshPayMePinStatus = async () => {
+  const refreshCavopayPinStatus = async () => {
     if (!activeUserKey) return
     try {
-      const status = await getPayMePinStatus(activeUserKey)
-      setHasPayMePin(status.hasPin)
+      const status = await getCavopayPinStatus(activeUserKey)
+      setHasCavopayPin(status.hasPin)
     } catch (error) {
       console.warn('Cavopay PIN status failed:', error)
     }
@@ -423,23 +764,72 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!activeUserKey) return
     refreshWallet()
-    refreshPayMePinStatus()
+    refreshCavopayPinStatus()
   }, [activeUserKey])
 
   useEffect(() => {
-    if (!paymeWalletAddress) return
-    loadCachedBalances(paymeWalletAddress)
+    if (!cavopayWalletAddress) return
+    loadCachedBalances(cavopayWalletAddress)
+    // Paint instantly from the last snapshot, then sync quietly in the background.
+    loadCachedLedger(cavopayWalletAddress)
     refreshBalances()
-    refreshLedger()
+    refreshLedger({ force: true })
+    refreshEarn()
     if (refreshTimer.current) window.clearInterval(refreshTimer.current)
+    // Slow background cadence: balances + ledger revalidate at most every 60s
+    // (refreshLedger itself enforces a 15s minimum gap and skips overlaps).
     refreshTimer.current = window.setInterval(() => {
       refreshBalances()
       refreshLedger()
-    }, 12000)
+    }, 60000)
+    const syncOnVisible = () => {
+      if (document.visibilityState !== 'visible') return
+      refreshBalances()
+      refreshLedger()
+    }
+    document.addEventListener('visibilitychange', syncOnVisible)
+    window.addEventListener('focus', syncOnVisible)
     return () => {
       if (refreshTimer.current) window.clearInterval(refreshTimer.current)
+      document.removeEventListener('visibilitychange', syncOnVisible)
+      window.removeEventListener('focus', syncOnVisible)
     }
-  }, [paymeWalletAddress])
+  }, [cavopayWalletAddress])
+
+  useEffect(() => {
+    if (!isSwapModalOpen || swapStep !== 'details' || !activeUserKey || !cavopayWalletAddress) return
+    const amount = Number(swapAmount)
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setSwapQuote(null)
+      setQuoteError(null)
+      return
+    }
+
+    const quoteSeq = ++quoteRequestSeq.current
+    setQuoteLoading(true)
+    const timer = window.setTimeout(() => {
+      getSwapQuote({
+        userKey: activeUserKey,
+        walletAddress: cavopayWalletAddress,
+        tokenIn: swapTokenIn,
+        tokenOut: swapTokenIn === 'USDC' ? 'EURC' : 'USDC',
+        amountIn: swapAmount,
+      })
+        .then(quote => {
+          if (quoteRequestSeq.current === quoteSeq) setSwapQuote(quote)
+        })
+        .catch((error: any) => {
+          if (quoteRequestSeq.current !== quoteSeq) return
+          setSwapQuote(null)
+          setQuoteError(error.message || 'Failed to fetch swap quote')
+        })
+        .finally(() => {
+          if (quoteRequestSeq.current === quoteSeq) setQuoteLoading(false)
+        })
+    }, 600)
+
+    return () => window.clearTimeout(timer)
+  }, [isSwapModalOpen, swapStep, swapAmount, swapTokenIn, activeUserKey, cavopayWalletAddress])
 
   const handleQrScan = async (value: string) => {
     setIsScanQrOpen(false)
@@ -478,14 +868,14 @@ export default function DashboardPage() {
   }, [favoritesKey])
 
   useEffect(() => {
-    if (!profile || hasPayMePin !== false || showClaimModal) return
-    setPaymePin('')
+    if (!profile || hasCavopayPin !== false || showClaimModal) return
+    setCavopayPin('')
     setConfirmPin('')
     setSecurityAnswerOne('')
     setSecurityAnswerTwo('')
     setPinSetupError(null)
     setShowPinSetupModal(true)
-  }, [profile, hasPayMePin, showClaimModal])
+  }, [profile, hasCavopayPin, showClaimModal])
 
   const saveFavorites = (nextFavorites: ContactEntry[]) => {
     setFavorites(nextFavorites)
@@ -518,7 +908,7 @@ export default function DashboardPage() {
     for (const payment of payments) {
       const contactAddress = addressSelector(payment)
       const key = normalizeAddress(contactAddress)
-      if (!key || key === normalizeAddress(paymeWalletAddress)) continue
+      if (!key || key === normalizeAddress(cavopayWalletAddress)) continue
       const existing = byAddress.get(key)
       if (existing && new Date(existing.lastPayment) >= new Date(payment.created_at)) continue
       byAddress.set(key, {
@@ -527,7 +917,7 @@ export default function DashboardPage() {
         avatarUrl: profileMap[key]?.avatar_url,
         lastPayment: payment.created_at,
         token: payment.token,
-        type: payment.type,
+        type: payment.type === 'received' ? 'received' : 'sent',
       })
     }
     return Array.from(byAddress.values()).sort((a, b) => new Date(b.lastPayment).getTime() - new Date(a.lastPayment).getTime())
@@ -535,16 +925,16 @@ export default function DashboardPage() {
 
   const recentSentContacts = useMemo(() => toContactEntries(sentPayments, payment =>
     payment.recipient_address || payment.payment_links?.creator_address,
-  ), [sentPayments, profileMap, paymeWalletAddress])
+  ), [sentPayments, profileMap, cavopayWalletAddress])
 
   const receivedFromContacts = useMemo(() => toContactEntries(receivedPayments, payment =>
     payment.payer_address,
-  ), [receivedPayments, profileMap, paymeWalletAddress])
+  ), [receivedPayments, profileMap, cavopayWalletAddress])
 
   const profileUrl = profile ? `${window.location.origin}/u/${profile.username}` : ''
 
   const createLink = async () => {
-    const targetAddress = form.recipient.trim() || paymeWalletAddress
+    const targetAddress = form.recipient.trim() || cavopayWalletAddress
     if (!targetAddress) {
       setCreateError('Cavopay wallet is still loading')
       return
@@ -574,7 +964,7 @@ export default function DashboardPage() {
   }
 
   const claimUsername = async () => {
-    if (!claimName || !paymeWalletAddress || !activeUserKey) return
+    if (!claimName || !cavopayWalletAddress || !activeUserKey) return
     setClaimLoading(true)
     setClaimErr(null)
     try {
@@ -583,11 +973,11 @@ export default function DashboardPage() {
       setProfileMap(previous => ({
         ...previous,
         [normalizeAddress(activeUserKey)]: nextProfile,
-        [normalizeAddress(paymeWalletAddress)]: nextProfile,
+        [normalizeAddress(cavopayWalletAddress)]: nextProfile,
       }))
       setShowClaimModal(false)
-      if (hasPayMePin === false) {
-        setPaymePin('')
+      if (hasCavopayPin === false) {
+        setCavopayPin('')
         setConfirmPin('')
         setSecurityAnswerOne('')
         setSecurityAnswerTwo('')
@@ -606,7 +996,7 @@ export default function DashboardPage() {
     setProfileMap(previous => ({
       ...previous,
       [normalizeAddress(activeUserKey)]: nextProfile,
-      [normalizeAddress(paymeWalletAddress)]: nextProfile,
+      [normalizeAddress(cavopayWalletAddress)]: nextProfile,
       [normalizeAddress(nextProfile.owner_address)]: nextProfile,
       [normalizeAddress(nextProfile.wallet_address)]: nextProfile,
     }))
@@ -637,11 +1027,11 @@ export default function DashboardPage() {
 
   const createPaymentPin = async () => {
     if (!activeUserKey) return
-    if (paymePin.length !== 4 || confirmPin.length !== 4) {
+    if (cavopayPin.length !== 4 || confirmPin.length !== 4) {
       setPinSetupError('Enter and confirm your 4-digit Payment PIN')
       return
     }
-    if (paymePin !== confirmPin) {
+    if (cavopayPin !== confirmPin) {
       setPinSetupError('Payment PINs do not match')
       return
     }
@@ -653,14 +1043,14 @@ export default function DashboardPage() {
     setPinSetupLoading(true)
     setPinSetupError(null)
     try {
-      await setupPayMePin({
+      await setupCavopayPin({
         userKey: activeUserKey,
-        pin: paymePin,
+        pin: cavopayPin,
         recoveryAnswers: [securityAnswerOne, securityAnswerTwo],
       })
-      setHasPayMePin(true)
+      setHasCavopayPin(true)
       setShowPinSetupModal(false)
-      setPaymePin('')
+      setCavopayPin('')
       setConfirmPin('')
       setSecurityAnswerOne('')
       setSecurityAnswerTwo('')
@@ -679,7 +1069,7 @@ export default function DashboardPage() {
     setDestinationChain(ARC_TESTNET_CHAIN)
     setSendStep('details')
     setPendingSend(null)
-    setPaymePin('')
+    setCavopayPin('')
     setConfirmPin('')
     setSecurityAnswerOne('')
     setSecurityAnswerTwo('')
@@ -696,7 +1086,7 @@ export default function DashboardPage() {
   }
 
   const prepareSend = async () => {
-    if (!sendDest.trim() || !sendAmount || !circleWallet?.walletId || !paymeWalletAddress) return
+    if (!sendDest.trim() || !sendAmount || !circleWallet?.walletId || !cavopayWalletAddress) return
     setSendError(null)
     setIsSending(true)
     try {
@@ -714,7 +1104,8 @@ export default function DashboardPage() {
       setPendingSend({
         recipientAddress,
         amount: sendAmount,
-        destinationChain: sendToken === 'EURC' ? ARC_TESTNET_CHAIN : destinationChain,
+        // Send is Cavopay-to-Cavopay on Arc. Cross-chain moves go via Withdraw.
+        destinationChain: ARC_TESTNET_CHAIN,
         token: sendToken,
         isUsername,
       })
@@ -731,7 +1122,7 @@ export default function DashboardPage() {
     const pendingPayment: LedgerPayment = {
       id,
       link_id: '',
-      payer_address: paymeWalletAddress,
+      payer_address: cavopayWalletAddress,
       recipient_address: send.recipientAddress,
       source_chain: ARC_TESTNET_CHAIN,
       destination_chain: send.destinationChain,
@@ -753,12 +1144,12 @@ export default function DashboardPage() {
   const findRecentOutgoingTransferHash = async (send: PendingSend, startedAt: number) => {
     const token = TOKENS[send.token]
     const expectedAmount = parseUnits(send.amount, token.decimals)
-    const transfers = await getTokenTransfers(paymeWalletAddress, token.address).catch(() => [])
+    const transfers = await getTokenTransfers(cavopayWalletAddress, token.address).catch(() => [])
     const match = transfers.find((transfer: any) => {
       const from = String(transfer.from || '').toLowerCase()
       const value = BigInt(transfer.value || 0)
       const timestamp = Number(transfer.timeStamp || 0) * 1000
-      return from === paymeWalletAddress.toLowerCase()
+      return from === cavopayWalletAddress.toLowerCase()
         && value === expectedAmount
         && timestamp >= startedAt - 30000
         && /^0x[a-fA-F0-9]{64}$/.test(String(transfer.hash || ''))
@@ -780,9 +1171,9 @@ export default function DashboardPage() {
     return undefined
   }
 
-  const completePayMePinSend = async () => {
-    if (!pendingSend || !circleWallet?.walletId || !paymeWalletAddress || !activeUserKey) return
-    if (!hasPayMePin && paymePin !== confirmPin) {
+  const completeCavopayPinSend = async () => {
+    if (!pendingSend || !circleWallet?.walletId || !cavopayWalletAddress || !activeUserKey) return
+    if (!hasCavopayPin && cavopayPin !== confirmPin) {
       setSendError('Payment PINs do not match')
       return
     }
@@ -791,22 +1182,22 @@ export default function DashboardPage() {
     setSendStep('processing')
     setBridgeStage('preparing')
     try {
-      if (!hasPayMePin) {
+      if (!hasCavopayPin) {
         if (!securityAnswerOne.trim() || !securityAnswerTwo.trim()) {
           throw new Error('Answer both security questions before creating your Payment PIN')
         }
-        await setupPayMePin({
+        await setupCavopayPin({
           userKey: activeUserKey,
-          pin: paymePin,
+          pin: cavopayPin,
           recoveryAnswers: [securityAnswerOne, securityAnswerTwo],
         })
-        setHasPayMePin(true)
+        setHasCavopayPin(true)
       }
 
-      const approval = await approvePayMePinTransaction({
+      const approval = await approveCavopayPinTransaction({
         userKey: activeUserKey,
-        pin: paymePin,
-        walletAddress: paymeWalletAddress,
+        pin: cavopayPin,
+        walletAddress: cavopayWalletAddress,
         walletId: circleWallet.walletId,
         destinationAddress: pendingSend.recipientAddress,
         destinationChain: pendingSend.destinationChain,
@@ -819,7 +1210,7 @@ export default function DashboardPage() {
       const result = pendingSend.destinationChain === ARC_TESTNET_CHAIN
         ? await sendDeveloperControlledTransfer({
             userKey: activeUserKey,
-            walletAddress: paymeWalletAddress,
+            walletAddress: cavopayWalletAddress,
             walletId: circleWallet.walletId,
             destinationAddress: pendingSend.recipientAddress,
             destinationChain: pendingSend.destinationChain,
@@ -829,7 +1220,7 @@ export default function DashboardPage() {
           })
         : await bridgeDeveloperControlledTransfer({
             userKey: activeUserKey,
-            walletAddress: paymeWalletAddress,
+            walletAddress: cavopayWalletAddress,
             walletId: circleWallet.walletId,
             destinationAddress: pendingSend.recipientAddress,
             destinationChain: pendingSend.destinationChain,
@@ -850,7 +1241,7 @@ export default function DashboardPage() {
         setBridgeStage('recording')
         removePendingSentPayment(pendingPaymentId)
         await logPayment({
-          payerAddress: paymeWalletAddress,
+          payerAddress: cavopayWalletAddress,
           recipientAddress: pendingSend.recipientAddress,
           sourceChain: ARC_TESTNET_CHAIN,
           destinationChain: pendingSend.destinationChain,
@@ -872,22 +1263,435 @@ export default function DashboardPage() {
       setIsSendModalOpen(false)
       await wait(2500)
       refreshBalances()
-      refreshLedger()
+      refreshLedger({ force: true })
     } catch (error: any) {
       setBridgeStage('error')
       setSendStep('pin')
       setSendError(error.message || 'Payment failed')
     } finally {
       setIsSending(false)
-      setPaymePin('')
+      setCavopayPin('')
+    }
+  }
+
+  const openWithdraw = () => {
+    setWithdrawAddress('')
+    setWithdrawChain(ARC_TESTNET_CHAIN)
+    setWithdrawAmount('')
+    setWithdrawError(null)
+    setWithdrawStep('details')
+    setCavopayPin('')
+    setConfirmPin('')
+    setSecurityAnswerOne('')
+    setSecurityAnswerTwo('')
+    setIsWithdrawModalOpen(true)
+  }
+
+  const closeWithdraw = () => {
+    if (isWithdrawing) return
+    setIsWithdrawModalOpen(false)
+    setWithdrawError(null)
+  }
+
+  const prepareWithdraw = () => {
+    if (!isValidWithdrawAddress(withdrawChain, withdrawAddress)) {
+      setWithdrawError('Enter a valid destination address for the selected chain')
+      return
+    }
+    setWithdrawError(null)
+    setWithdrawStep('pin')
+  }
+
+  const completeWithdraw = async () => {
+    if (!circleWallet?.walletId || !cavopayWalletAddress || !activeUserKey) return
+    if (!hasCavopayPin && cavopayPin !== confirmPin) {
+      setWithdrawError('Payment PINs do not match')
+      return
+    }
+    const amountNumber = Number(withdrawAmount)
+    if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
+      setWithdrawError('Enter a valid amount')
+      return
+    }
+    setIsWithdrawing(true)
+    setWithdrawError(null)
+    setWithdrawStep('processing')
+    try {
+      if (!hasCavopayPin) {
+        if (!securityAnswerOne.trim() || !securityAnswerTwo.trim()) {
+          throw new Error('Answer both security questions before creating your Payment PIN')
+        }
+        await setupCavopayPin({
+          userKey: activeUserKey,
+          pin: cavopayPin,
+          recoveryAnswers: [securityAnswerOne, securityAnswerTwo],
+        })
+        setHasCavopayPin(true)
+      }
+
+      const approval = await approveCavopayPinTransaction({
+        userKey: activeUserKey,
+        pin: cavopayPin,
+        walletAddress: cavopayWalletAddress,
+        walletId: circleWallet.walletId,
+        destinationAddress: withdrawAddress.trim(),
+        destinationChain: withdrawChain,
+        amount: withdrawAmount,
+        token: 'USDC',
+        transactionType: 'send',
+      })
+
+      const submittedAt = Date.now()
+      const transfer: PendingSend = {
+        recipientAddress: withdrawAddress.trim(),
+        amount: withdrawAmount,
+        destinationChain: withdrawChain,
+        token: 'USDC',
+        isUsername: false,
+      }
+      const result = withdrawChain === ARC_TESTNET_CHAIN
+        ? await sendDeveloperControlledTransfer({
+            userKey: activeUserKey,
+            walletAddress: cavopayWalletAddress,
+            walletId: circleWallet.walletId,
+            destinationAddress: transfer.recipientAddress,
+            destinationChain: withdrawChain,
+            amount: withdrawAmount,
+            token: 'USDC',
+            approvalId: approval.approvalId,
+          })
+        : await bridgeDeveloperControlledTransfer({
+            userKey: activeUserKey,
+            walletAddress: cavopayWalletAddress,
+            walletId: circleWallet.walletId,
+            destinationAddress: transfer.recipientAddress,
+            destinationChain: withdrawChain,
+            amount: withdrawAmount,
+            approvalId: approval.approvalId,
+          })
+
+      let txHash = getTxHash(result)
+      const trackingId = result.trackingId
+      const pendingPaymentId = !txHash ? addPendingSentPayment(transfer, trackingId) : undefined
+      if (!txHash && trackingId) {
+        txHash = await waitForTrackedTransaction(trackingId, transfer, submittedAt)
+      }
+      if (txHash) {
+        removePendingSentPayment(pendingPaymentId)
+        await logPayment({
+          payerAddress: cavopayWalletAddress,
+          recipientAddress: transfer.recipientAddress,
+          sourceChain: ARC_TESTNET_CHAIN,
+          destinationChain: withdrawChain,
+          txHash,
+          amount: withdrawAmount,
+          token: 'USDC',
+        })
+      } else {
+        console.warn('Withdrawal submitted but the backend has not returned a transaction hash yet:', result)
+      }
+
+      setWithdrawSuccess({
+        amount: withdrawAmount,
+        recipient: transfer.recipientAddress,
+        chain: withdrawChain,
+        txHash,
+      })
+      setIsWithdrawModalOpen(false)
+      await wait(2500)
+      refreshBalances()
+      refreshLedger({ force: true })
+    } catch (error: any) {
+      setWithdrawStep('pin')
+      setWithdrawError(error.message || 'Withdrawal failed')
+    } finally {
+      setIsWithdrawing(false)
+      setCavopayPin('')
+    }
+  }
+
+  const openSwap = () => {
+    setSwapAmount('')
+    setSwapTokenIn('USDC')
+    setSwapQuote(null)
+    setQuoteError(null)
+    setSwapError(null)
+    setSwapStep('details')
+    setCavopayPin('')
+    setConfirmPin('')
+    setSecurityAnswerOne('')
+    setSecurityAnswerTwo('')
+    setIsSwapModalOpen(true)
+  }
+
+  const closeSwap = () => {
+    if (isSwapping) return
+    setIsSwapModalOpen(false)
+    setSwapError(null)
+  }
+
+  const openEarn = (mode: EarnMode = 'deposit', token?: EarnToken) => {
+    setEarnMode(mode)
+    if (token) setEarnToken(token)
+    setEarnAmount('')
+    setEarnError(null)
+    setEarnStep('details')
+    setCavopayPin('')
+    setConfirmPin('')
+    setSecurityAnswerOne('')
+    setSecurityAnswerTwo('')
+    setIsEarnModalOpen(true)
+    refreshEarn()
+  }
+
+  const closeEarn = () => {
+    if (isEarning) return
+    setIsEarnModalOpen(false)
+    setEarnError(null)
+  }
+
+  const prepareEarn = () => {
+    setEarnError(null)
+    setEarnStep('pin')
+  }
+
+  const refreshEarn = async (retried = false) => {
+    if (!cavopayWalletAddress) return
+    setEarnVaultsLoading(true)
+    try {
+      const [vaults, positions] = await Promise.all([
+        getEarnVaults(cavopayWalletAddress).catch((): EarnVault[] => []),
+        activeUserKey ? getEarnPositions(activeUserKey).catch((): EarnPosition[] => []) : Promise.resolve([] as EarnPosition[]),
+      ])
+      // One automatic retry: a single RPC blip shouldn't end in "unavailable".
+      if (vaults.length === 0 && !retried) {
+        await wait(3000)
+        return refreshEarn(true)
+      }
+      setEarnVaults(vaults)
+      setEarnPositions(positions)
+    } catch (error) {
+      console.warn('Earn refresh failed:', error)
+    } finally {
+      setEarnVaultsLoading(false)
+    }
+  }
+
+  const completeEarn = async () => {
+    if (!circleWallet?.walletId || !cavopayWalletAddress || !activeUserKey) return
+    if (!hasCavopayPin && cavopayPin !== confirmPin) {
+      setEarnError('Payment PINs do not match')
+      return
+    }
+    const amountNumber = Number(earnAmount)
+    if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
+      setEarnError('Enter a valid amount')
+      return
+    }
+    const vault = earnVaults.find(item => item.token === earnToken)
+    const shareSymbol = earnToken === 'USDC' ? 'alvUSDC' : 'alvEURC'
+    setIsEarning(true)
+    setEarnError(null)
+    setEarnStep('processing')
+    try {
+      if (!hasCavopayPin) {
+        if (!securityAnswerOne.trim() || !securityAnswerTwo.trim()) {
+          throw new Error('Answer both security questions before creating your Payment PIN')
+        }
+        await setupCavopayPin({
+          userKey: activeUserKey,
+          pin: cavopayPin,
+          recoveryAnswers: [securityAnswerOne, securityAnswerTwo],
+        })
+        setHasCavopayPin(true)
+      }
+
+      if (earnMode === 'deposit') {
+        if (!vault) throw new Error('Vault data is still loading. Try again in a moment.')
+        const approval = await approveCavopayPinTransaction({
+          userKey: activeUserKey,
+          pin: cavopayPin,
+          walletAddress: cavopayWalletAddress,
+          walletId: circleWallet.walletId,
+          destinationAddress: vault.vault,
+          destinationChain: ARC_TESTNET_CHAIN,
+          amount: earnAmount,
+          token: earnToken,
+          transactionType: 'earn',
+        })
+        const result = await depositEarn({
+          userKey: activeUserKey,
+          walletAddress: cavopayWalletAddress,
+          walletId: circleWallet.walletId,
+          token: earnToken,
+          amount: earnAmount,
+          approvalId: approval.approvalId,
+        })
+        setIsEarnModalOpen(false)
+        setEarnSuccess({
+          mode: 'deposit',
+          amount: String(result.amount),
+          token: result.token,
+          shares: String(result.shares),
+          shareSymbol,
+          txHash: result.txHash || undefined,
+        })
+      } else {
+        if (!vault) throw new Error('Vault data is still loading. Try again in a moment.')
+        const approval = await approveCavopayPinTransaction({
+          userKey: activeUserKey,
+          pin: cavopayPin,
+          walletAddress: cavopayWalletAddress,
+          walletId: circleWallet.walletId,
+          destinationAddress: vault.vault,
+          destinationChain: ARC_TESTNET_CHAIN,
+          amount: earnAmount,
+          token: earnToken,
+          transactionType: 'earn',
+        })
+        const result = await withdrawEarn({
+          userKey: activeUserKey,
+          walletAddress: cavopayWalletAddress,
+          walletId: circleWallet.walletId,
+          token: earnToken,
+          shares: earnAmount,
+          approvalId: approval.approvalId,
+          destinationChain: ARC_TESTNET_CHAIN,
+          destinationAddress: cavopayWalletAddress,
+        })
+        setIsEarnModalOpen(false)
+        setEarnSuccess({
+          mode: 'withdraw',
+          amount: String(result.amount),
+          token: result.token,
+          shares: String(result.shares),
+          shareSymbol,
+          txHash: result.txHash || undefined,
+          destinationChain: ARC_TESTNET_CHAIN,
+          destinationLabel: undefined,
+        })
+      }
+      await wait(1500)
+      refreshBalances()
+      refreshLedger({ force: true })
+      refreshEarn()
+    } catch (error: any) {
+      setEarnStep('pin')
+      setEarnError(error.message || (earnMode === 'deposit' ? 'Deposit failed' : 'Withdrawal failed'))
+    } finally {
+      setIsEarning(false)
+      setCavopayPin('')
+    }
+  }
+
+  const prepareSwap = () => {
+    if (!swapQuote) return
+    setSwapError(null)
+    setSwapStep('pin')
+  }
+
+  const completeSwap = async () => {
+    if (!swapQuote || !circleWallet?.walletId || !cavopayWalletAddress || !activeUserKey) return
+    if (!hasCavopayPin && cavopayPin !== confirmPin) {
+      setSwapError('Payment PINs do not match')
+      return
+    }
+    const tokenOut = swapTokenIn === 'USDC' ? 'EURC' : 'USDC'
+    setIsSwapping(true)
+    setSwapError(null)
+    setSwapStep('processing')
+    try {
+      if (!hasCavopayPin) {
+        if (!securityAnswerOne.trim() || !securityAnswerTwo.trim()) {
+          throw new Error('Answer both security questions before creating your Payment PIN')
+        }
+        await setupCavopayPin({
+          userKey: activeUserKey,
+          pin: cavopayPin,
+          recoveryAnswers: [securityAnswerOne, securityAnswerTwo],
+        })
+        setHasCavopayPin(true)
+      }
+
+      const approval = await approveCavopayPinTransaction({
+        userKey: activeUserKey,
+        pin: cavopayPin,
+        walletAddress: cavopayWalletAddress,
+        walletId: circleWallet.walletId,
+        destinationAddress: cavopayWalletAddress,
+        destinationChain: ARC_TESTNET_CHAIN,
+        amount: swapQuote.amountIn,
+        token: swapTokenIn,
+        tokenOut,
+        transactionType: 'swap',
+      })
+
+      const result = await executeSwap({
+        userKey: activeUserKey,
+        walletAddress: cavopayWalletAddress,
+        walletId: circleWallet.walletId,
+        tokenIn: swapTokenIn,
+        tokenOut,
+        amountIn: swapQuote.amountIn,
+        minOut: swapQuote.minOut,
+        approvalId: approval.approvalId,
+      })
+
+      setIsSwapModalOpen(false)
+      setSwapSuccess({
+        amountIn: swapQuote.amountIn,
+        tokenIn: swapTokenIn,
+        amountOut: result.amountOut || swapQuote.estimatedOutput,
+        tokenOut,
+        txHash: result.txHash || undefined,
+      })
+      // Record the swap in our own ledger so it shows in history even when
+      // the Arcscan transfer API is rate-limited. Sends do the same via logPayment.
+      if (result.txHash) {
+        try {
+          await logPayment({
+            payerAddress: cavopayWalletAddress,
+            recipientAddress: cavopayWalletAddress,
+            sourceChain: ARC_TESTNET_CHAIN,
+            destinationChain: ARC_TESTNET_CHAIN,
+            txHash: result.txHash,
+            amount: swapQuote.amountIn,
+            token: swapTokenIn,
+          })
+        } catch (logError) {
+          console.warn('Swap executed but ledger logging failed:', logError)
+        }
+      }
+      await wait(1500)
+      refreshBalances()
+      refreshLedger({ force: true })
+    } catch (error: any) {
+      setSwapStep('pin')
+      setSwapError(error.message || 'Swap failed')
+    } finally {
+      setIsSwapping(false)
+      setCavopayPin('')
     }
   }
 
   const getCounterpartyLabel = (payment: LedgerPayment) => {
+    if (payment.type === 'swap') {
+      const legs = payment.swap
+      return legs ? `Swap ${legs.tokenIn} → ${legs.tokenOut}` : 'Swap'
+    }
+    if (payment.type === 'earn') {
+      const legs = payment.earn
+      return legs
+        ? legs.kind === 'deposit' ? `Earn · ${legs.shareSymbol}` : `Earn · ${legs.token}`
+        : 'Earn'
+    }
     const isReceived = payment.type === 'received'
     const value = isReceived
       ? payment.payer_address
       : payment.recipient_address || payment.payment_links?.creator_address
+    if (value && normalizeAddress(value) === normalizeAddress(cavopayWalletAddress)) {
+      return `${isReceived ? 'From' : 'To'}: Your wallet`
+    }
     return `${isReceived ? 'From' : 'To'}: ${formatLedgerAddress(value, profileMap)}`
   }
 
@@ -895,6 +1699,10 @@ export default function DashboardPage() {
     if (!selectedPayment) return null
 
     const isReceived = selectedPayment.type === 'received'
+    const isSwap = selectedPayment.type === 'swap'
+    const isEarn = selectedPayment.type === 'earn'
+    const swapLegs = selectedPayment.swap
+    const earnLegs = selectedPayment.earn
     const status = selectedPayment.tx_hash ? 'Completed' : 'Pending'
     const counterpartyAddress = isReceived
       ? selectedPayment.payer_address
@@ -903,6 +1711,18 @@ export default function DashboardPage() {
     const destinationChain = getDestinationChainLabel(selectedPayment.destination_chain || ARC_TESTNET_CHAIN)
     const explorerUrl = paymentExplorerUrl(selectedPayment)
     const amountPrefix = isReceived ? '+' : '-'
+    const headline = isSwap ? 'Swap Receipt' : isEarn ? 'Earn Receipt' : 'Transaction Receipt'
+    const directionLabel =
+      selectedPayment.type === 'swap' ? 'Swap'
+      : selectedPayment.type === 'earn' ? 'Earn'
+      : isReceived ? 'Received' : 'Sent'
+    const subline = isSwap
+      ? `Stablecoin conversion${swapLegs ? ` · ${swapLegs.tokenIn} → ${swapLegs.tokenOut}` : ''} on Arc`
+      : isEarn && earnLegs
+        ? earnLegs.kind === 'deposit'
+          ? `Vault deposit · ${earnLegs.token} → ${earnLegs.shareSymbol}`
+          : `Vault withdrawal · ${earnLegs.shareSymbol} → ${earnLegs.token}`
+      : isReceived ? 'Incoming stablecoin payment' : 'Outgoing stablecoin payment'
 
     return (
       <div className="wc-modal" onClick={() => setSelectedPayment(null)}>
@@ -910,28 +1730,75 @@ export default function DashboardPage() {
           <div className="receipt-header">
             <div>
               <span className={`receipt-status ${selectedPayment.tx_hash ? 'success' : 'pending'}`}>{status}</span>
-              <h2>Transaction Receipt</h2>
-              <p>{isReceived ? 'Incoming stablecoin payment' : 'Outgoing stablecoin payment'}</p>
+              <h2>{headline}</h2>
+              <p>{subline}</p>
             </div>
             <button className="receipt-close icon-btn" onClick={() => setSelectedPayment(null)} aria-label="Close receipt">
               <X size={20} />
             </button>
           </div>
 
-          <div className={`receipt-amount ${isReceived ? 'incoming' : 'outgoing'}`}>
-            <span>{isReceived ? 'Received' : 'Sent'}</span>
-            <strong>{amountPrefix}{selectedPayment.amount} {selectedPayment.token}</strong>
-          </div>
+          {isSwap && swapLegs ? (
+            <div className="receipt-amount outgoing">
+              <span>Swapped</span>
+              <strong>-{swapLegs.amountIn} {swapLegs.tokenIn} → +{swapLegs.amountOut ?? '…'} {swapLegs.tokenOut}</strong>
+            </div>
+          ) : isEarn && earnLegs ? (
+            <div className="receipt-amount outgoing">
+              <span>{earnLegs.kind === 'deposit' ? 'Deposited' : 'Withdrawn'}</span>
+              <strong>
+                {earnLegs.kind === 'deposit'
+                  ? <>-{earnLegs.amount} {earnLegs.token} → +{earnLegs.shares} {earnLegs.shareSymbol}</>
+                  : <>+{earnLegs.amount} {earnLegs.token} ← {earnLegs.shares} {earnLegs.shareSymbol}</>}
+              </strong>
+            </div>
+          ) : (
+            <div className={`receipt-amount ${isReceived ? 'incoming' : 'outgoing'}`}>
+              <span>{isReceived ? 'Received' : 'Sent'}</span>
+              <strong>{amountPrefix}{selectedPayment.amount} {selectedPayment.token}</strong>
+            </div>
+          )}
 
           <div className="receipt-section">
-            <div className="receipt-row"><span>Direction</span><strong>{isReceived ? 'Received' : 'Sent'}</strong></div>
-            <div className="receipt-row"><span>{isReceived ? 'From' : 'To'}</span><strong>{formatLedgerAddress(counterpartyAddress, profileMap)}</strong></div>
-            <div className="receipt-row"><span>Your Cavopay wallet</span><strong>{shorten(paymeWalletAddress)}</strong></div>
+            <div className="receipt-row"><span>Direction</span><strong>{directionLabel}</strong></div>
+            {isSwap && swapLegs ? (
+              <>
+                <div className="receipt-row"><span>You swapped</span><strong>-{swapLegs.amountIn} {swapLegs.tokenIn}</strong></div>
+                <div className="receipt-row"><span>You received</span><strong>+{swapLegs.amountOut ?? '…'} {swapLegs.tokenOut}</strong></div>
+              </>
+            ) : isEarn && earnLegs ? (
+              <>
+                {earnLegs.kind === 'deposit' ? (
+                  <>
+                    <div className="receipt-row"><span>You deposited</span><strong>-{earnLegs.amount} {earnLegs.token}</strong></div>
+                    <div className="receipt-row"><span>Shares received</span><strong>+{earnLegs.shares} {earnLegs.shareSymbol}</strong></div>
+                  </>
+                ) : (
+                  <>
+                    <div className="receipt-row"><span>Shares burned</span><strong>{earnLegs.shares} {earnLegs.shareSymbol}</strong></div>
+                    <div className="receipt-row"><span>You received</span><strong>+{earnLegs.amount} {earnLegs.token}</strong></div>
+                  </>
+                )}
+              </>
+            ) : (
+              <div className="receipt-row"><span>{isReceived ? 'From' : 'To'}</span><strong>{
+                counterpartyAddress && normalizeAddress(counterpartyAddress) === normalizeAddress(cavopayWalletAddress)
+                  ? 'Your wallet'
+                  : formatLedgerAddress(counterpartyAddress, profileMap)
+              }</strong></div>
+            )}
+            <div className="receipt-row"><span>Your Cavopay wallet</span><strong>{shorten(cavopayWalletAddress)}</strong></div>
             <div className="receipt-row"><span>Date</span><strong>{fmtDate(selectedPayment.created_at)}</strong></div>
           </div>
 
           <div className="receipt-section">
-            <div className="receipt-row"><span>Asset</span><strong>{selectedPayment.token}</strong></div>
+            {isSwap && swapLegs ? (
+              <div className="receipt-row"><span>Pair</span><strong>{swapLegs.tokenIn} → {swapLegs.tokenOut}</strong></div>
+            ) : isEarn && earnLegs ? (
+              <div className="receipt-row"><span>Vault</span><strong>{earnLegs.shareSymbol} · ArcLend</strong></div>
+            ) : (
+              <div className="receipt-row"><span>Asset</span><strong>{selectedPayment.token}</strong></div>
+            )}
             <div className="receipt-row"><span>Source network</span><strong>{sourceChain}</strong></div>
             <div className="receipt-row"><span>Settlement network</span><strong>{destinationChain}</strong></div>
             {selectedPayment.link_id && <div className="receipt-row"><span>Payment link ID</span><strong>{selectedPayment.link_id}</strong></div>}
@@ -1033,30 +1900,44 @@ export default function DashboardPage() {
 
               <div className="dashboard-grid-top">
                 <BalanceCard
-                  walletAddress={paymeWalletAddress}
+                  walletAddress={cavopayWalletAddress}
                   usdcDisplay={usdcDisplay}
                   eurcDisplay={eurcDisplay}
-                  syncing={balanceLoading && !!paymeWalletAddress}
+                  syncing={balanceLoading && !!cavopayWalletAddress}
                   shortenAddress={shorten}
                 />
                 <QuickActions
                   profile={profile}
-                  disabled={!paymeWalletAddress}
+                  disabled={!cavopayWalletAddress}
                   onSend={() => openSend()}
+                  onSwap={openSwap}
+                  onEarn={() => openEarn()}
+                  onWithdraw={() => openWithdraw()}
                   onReceive={() => setIsReceiveModalOpen(true)}
                   onScanQr={() => setIsScanQrOpen(true)}
                 />
               </div>
 
+              <EarnSection
+                vaults={earnVaults}
+                positions={earnPositions}
+                loading={earnVaultsLoading}
+                onDeposit={(token) => openEarn('deposit', token)}
+                onWithdraw={(token) => openEarn('withdraw', token)}
+              />
+
               <TransactionList
-                activeTab="all"
+                activeTab={miniTab}
                 loading={ledgerLoading}
-                payments={dashboardPayments}
+                syncing={ledgerSyncing}
+                payments={miniPayments}
                 receivedCount={receivedPayments.length}
-                sentCount={sentPayments.length}
+                sentCount={sentOnlyPayments.length}
+                swapCount={swapOnlyPayments.length}
+                earnCount={earnPayments.length}
                 visibleCount={4}
                 showViewAll
-                onTabChange={setLedgerTab}
+                onTabChange={setMiniTab}
                 onSelectPayment={setSelectedPayment}
                 onViewAll={() => setSection('history')}
                 formatDate={fmtDate}
@@ -1070,14 +1951,17 @@ export default function DashboardPage() {
             <>
               <div className="page-heading">
                 <h1>Transaction History</h1>
-                <p>View and filter all incoming and outgoing stablecoin payments.</p>
+                <p>View and filter incoming payments, outgoing payments, swaps and earn activity.</p>
               </div>
               <TransactionList
                 activeTab={ledgerTab}
                 loading={ledgerLoading}
+                syncing={ledgerSyncing}
                 payments={allPayments}
                 receivedCount={receivedPayments.length}
-                sentCount={sentPayments.length}
+                sentCount={sentOnlyPayments.length}
+                swapCount={swapOnlyPayments.length}
+                earnCount={earnPayments.length}
                 visibleCount={historyVisibleCount}
                 onTabChange={(tab) => {
                   setLedgerTab(tab)
@@ -1131,7 +2015,7 @@ export default function DashboardPage() {
                       className="form-input"
                       value={form.recipient}
                       onChange={event => setForm({ ...form, recipient: event.target.value })}
-                      placeholder={paymeWalletAddress || '0x address or @username'}
+                      placeholder={cavopayWalletAddress || '0x address or @username'}
                     />
                     <p className="muted-small">Leave blank to use your Cavopay wallet.</p>
                   </div>
@@ -1162,7 +2046,7 @@ export default function DashboardPage() {
                     />
                   </div>
                   {createError && <div className="error-text">{createError}</div>}
-                  <button className="btn btn-primary btn-full" onClick={createLink} disabled={createLoading || !paymeWalletAddress}>
+                  <button className="btn btn-primary btn-full" onClick={createLink} disabled={createLoading || !cavopayWalletAddress}>
                     {createLoading ? 'Creating...' : 'Create Payment Link'}
                   </button>
                   {generatedLink && (
@@ -1178,7 +2062,7 @@ export default function DashboardPage() {
         </section>
       </main>
 
-      {showClaimModal && paymeWalletAddress && (
+      {showClaimModal && cavopayWalletAddress && (
         <div className="wc-modal">
           <div className="card glass wc-card">
             <h2 className="wc-title">Claim Your Username</h2>
@@ -1212,8 +2096,8 @@ export default function DashboardPage() {
             <div className="form-stack">
               <PinDotsInput
                 label="New Payment PIN"
-                value={paymePin}
-                onChange={setPaymePin}
+                value={cavopayPin}
+                onChange={setCavopayPin}
                 disabled={pinSetupLoading}
               />
               <PinDotsInput
@@ -1223,7 +2107,7 @@ export default function DashboardPage() {
                 disabled={pinSetupLoading}
               />
               <div className="form-group">
-                <label className="form-label">{PAYME_SECURITY_QUESTIONS[0]}</label>
+                <label className="form-label">{CAVOPAY_SECURITY_QUESTIONS[0]}</label>
                 <input
                   className="form-input"
                   placeholder="Your answer"
@@ -1233,7 +2117,7 @@ export default function DashboardPage() {
                 />
               </div>
               <div className="form-group">
-                <label className="form-label">{PAYME_SECURITY_QUESTIONS[1]}</label>
+                <label className="form-label">{CAVOPAY_SECURITY_QUESTIONS[1]}</label>
                 <input
                   className="form-input"
                   placeholder="Your recovery answer"
@@ -1248,7 +2132,7 @@ export default function DashboardPage() {
                 onClick={createPaymentPin}
                 disabled={
                   pinSetupLoading
-                  || paymePin.length !== 4
+                  || cavopayPin.length !== 4
                   || confirmPin.length !== 4
                   || !securityAnswerOne.trim()
                   || !securityAnswerTwo.trim()
@@ -1267,9 +2151,9 @@ export default function DashboardPage() {
           chains={DESTINATION_CHAINS}
           confirmPin={confirmPin}
           destinationChain={destinationChain}
-          hasPayMePin={hasPayMePin}
+          hasCavopayPin={hasCavopayPin}
           isSending={isSending}
-          paymePin={paymePin}
+          cavopayPin={cavopayPin}
           pendingSend={pendingSend}
           securityAnswerOne={securityAnswerOne}
           securityAnswerTwo={securityAnswerTwo}
@@ -1284,17 +2168,51 @@ export default function DashboardPage() {
           onClose={closeSend}
           onConfirmPinChange={setConfirmPin}
           onDestinationChainChange={setDestinationChain}
-          onPayMePinChange={setPaymePin}
+          onCavopayPinChange={setCavopayPin}
           onRecipientChange={setSendDest}
           onSecurityAnswerOneChange={setSecurityAnswerOne}
           onSecurityAnswerTwoChange={setSecurityAnswerTwo}
           onSend={prepareSend}
-          onSubmitPin={completePayMePinSend}
+          onSubmitPin={completeCavopayPinSend}
           onTokenChange={(token) => {
             setSendToken(token)
             if (token === 'EURC') setDestinationChain(ARC_TESTNET_CHAIN)
           }}
           getChainLabel={getDestinationChainLabel}
+          shortenAddress={shorten}
+        />
+      )}
+
+      {isSwapModalOpen && (
+        <SwapModal
+          swapStep={swapStep}
+          swapAmount={swapAmount}
+          swapTokenIn={swapTokenIn}
+          swapQuote={swapQuote}
+          quoteLoading={quoteLoading}
+          quoteError={quoteError}
+          swapError={swapError}
+          isSwapping={isSwapping}
+          cavopayPin={cavopayPin}
+          confirmPin={confirmPin}
+          securityAnswerOne={securityAnswerOne}
+          securityAnswerTwo={securityAnswerTwo}
+          hasCavopayPin={hasCavopayPin}
+          walletAddress={cavopayWalletAddress}
+          onAmountChange={setSwapAmount}
+          onTokenInChange={(token) => {
+            setSwapTokenIn(token)
+            setSwapQuote(null)
+            setQuoteError(null)
+          }}
+          onCavopayPinChange={setCavopayPin}
+          onConfirmPinChange={setConfirmPin}
+          onSecurityAnswerOneChange={setSecurityAnswerOne}
+          onSecurityAnswerTwoChange={setSecurityAnswerTwo}
+          onReview={prepareSwap}
+          onSubmitPin={completeSwap}
+          onBackToDetails={() => setSwapStep('details')}
+          onClose={closeSwap}
           shortenAddress={shorten}
         />
       )}
@@ -1305,12 +2223,49 @@ export default function DashboardPage() {
           claimLoading={claimLoading}
           claimName={claimName}
           loginLabel={loginLabel}
-          paymeWalletAddress={paymeWalletAddress}
+          cavopayWalletAddress={cavopayWalletAddress}
           profile={profile}
-          qrValue={profileUrl || paymeWalletAddress || window.location.origin}
+          qrValue={profileUrl || cavopayWalletAddress || window.location.origin}
           onClaim={claimUsername}
           onClaimNameChange={setClaimName}
           onClose={() => setIsReceiveModalOpen(false)}
+        />
+      )}
+
+      {isWithdrawModalOpen && (
+        <WithdrawModal
+          withdrawStep={withdrawStep}
+          withdrawAddress={withdrawAddress}
+          withdrawChain={withdrawChain}
+          withdrawAmount={withdrawAmount}
+          withdrawError={withdrawError}
+          isWithdrawing={isWithdrawing}
+          cavopayPin={cavopayPin}
+          confirmPin={confirmPin}
+          securityAnswerOne={securityAnswerOne}
+          securityAnswerTwo={securityAnswerTwo}
+          hasCavopayPin={hasCavopayPin}
+          walletAddress={cavopayWalletAddress}
+          availableBalance={usdcDisplay}
+          onAddressChange={(value) => {
+            setWithdrawAddress(value)
+            setWithdrawError(null)
+          }}
+          onChainChange={(value) => {
+            setWithdrawChain(value)
+            setWithdrawError(null)
+          }}
+          onAmountChange={setWithdrawAmount}
+          onCavopayPinChange={setCavopayPin}
+          onConfirmPinChange={setConfirmPin}
+          onSecurityAnswerOneChange={setSecurityAnswerOne}
+          onSecurityAnswerTwoChange={setSecurityAnswerTwo}
+          onReview={prepareWithdraw}
+          onSubmitPin={completeWithdraw}
+          onBackToDetails={() => setWithdrawStep('details')}
+          onClose={closeWithdraw}
+          getChainLabel={getDestinationChainLabel}
+          shortenAddress={shorten}
         />
       )}
 
@@ -1318,6 +2273,46 @@ export default function DashboardPage() {
         <ScanQrModal
           onClose={() => setIsScanQrOpen(false)}
           onScan={handleQrScan}
+        />
+      )}
+
+      {isEarnModalOpen && (
+        <EarnModal
+          mode={earnMode}
+          earnStep={earnStep}
+          earnAmount={earnAmount}
+          earnToken={earnToken}
+          vaults={earnVaults}
+          earnError={earnError}
+          isEarning={isEarning}
+          cavopayPin={cavopayPin}
+          confirmPin={confirmPin}
+          securityAnswerOne={securityAnswerOne}
+          securityAnswerTwo={securityAnswerTwo}
+          hasCavopayPin={hasCavopayPin}
+          walletAddress={cavopayWalletAddress}
+          availableBalance={earnToken === 'USDC' ? usdcDisplay : eurcDisplay}
+          positionShares={Number(earnPositions.find(p => String(p.token).toUpperCase() === earnToken)?.shares) || 0}
+          onAmountChange={setEarnAmount}
+          onTokenChange={(token) => {
+            setEarnToken(token)
+            setEarnError(null)
+          }}
+          onModeChange={(nextMode) => {
+            setEarnMode(nextMode)
+            setEarnAmount('')
+            setEarnError(null)
+            setEarnStep('details')
+          }}
+          onCavopayPinChange={setCavopayPin}
+          onConfirmPinChange={setConfirmPin}
+          onSecurityAnswerOneChange={setSecurityAnswerOne}
+          onSecurityAnswerTwoChange={setSecurityAnswerTwo}
+          onReview={prepareEarn}
+          onSubmitPin={completeEarn}
+          onBackToDetails={() => setEarnStep('details')}
+          onClose={closeEarn}
+          shortenAddress={shorten}
         />
       )}
 
@@ -1334,6 +2329,64 @@ export default function DashboardPage() {
           onSendAnother={() => {
             setSendSuccess(null)
             openSend()
+          }}
+        />
+      )}
+
+      {swapSuccess && (
+        <PaymentSuccessCelebration
+          variant="swap"
+          amount={swapSuccess.amountOut}
+          token={swapSuccess.tokenOut}
+          swapInAmount={swapSuccess.amountIn}
+          swapInToken={swapSuccess.tokenIn}
+          recipient={`${swapSuccess.amountIn} ${swapSuccess.tokenIn} swap`}
+          txHash={swapSuccess.txHash}
+          explorerUrl={swapSuccess.txHash ? `${getPaymentSourceChain(ARC_TESTNET_CHAIN).explorer}${swapSuccess.txHash}` : undefined}
+          onClose={() => setSwapSuccess(null)}
+          repeatLabel="Swap Again"
+          onSendAnother={() => {
+            setSwapSuccess(null)
+            openSwap()
+          }}
+        />
+      )}
+
+      {earnSuccess && (
+        <PaymentSuccessCelebration
+          variant="earn"
+          earnMode={earnSuccess.mode}
+          amount={earnSuccess.amount}
+          token={earnSuccess.token}
+          earnShares={earnSuccess.shares}
+          earnShareSymbol={earnSuccess.shareSymbol}
+          destinationLabel={earnSuccess.destinationLabel}
+          recipient={earnSuccess.shareSymbol}
+          txHash={earnSuccess.txHash}
+          explorerUrl={earnSuccess.txHash ? `${getPaymentSourceChain(ARC_TESTNET_CHAIN).explorer}${earnSuccess.txHash}` : undefined}
+          onClose={() => setEarnSuccess(null)}
+          repeatLabel={earnSuccess.mode === 'deposit' ? 'Deposit Again' : 'Withdraw Again'}
+          onSendAnother={() => {
+            const mode = earnSuccess.mode
+            const token = earnSuccess.token as EarnToken
+            setEarnSuccess(null)
+            openEarn(mode, token)
+          }}
+        />
+      )}
+
+      {withdrawSuccess && (
+        <PaymentSuccessCelebration
+          amount={withdrawSuccess.amount}
+          token="USDC"
+          recipient={withdrawSuccess.recipient}
+          txHash={withdrawSuccess.txHash}
+          explorerUrl={withdrawSuccess.txHash ? `${getPaymentSourceChain(ARC_TESTNET_CHAIN).explorer}${withdrawSuccess.txHash}` : undefined}
+          onClose={() => setWithdrawSuccess(null)}
+          repeatLabel="Withdraw Again"
+          onSendAnother={() => {
+            setWithdrawSuccess(null)
+            openWithdraw()
           }}
         />
       )}

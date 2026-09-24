@@ -1,5 +1,5 @@
 {
-  "name": "payme-frontend",
+  "name": "cavopay-frontend",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -11,7 +11,6 @@
   "dependencies": {
     "@circle-fin/adapter-viem-v2": "^1.11.2",
     "@circle-fin/app-kit": "^1.7.0",
-    "@circle-fin/w3s-pw-web-sdk": "^1.1.11",
     "@rainbow-me/rainbowkit": "^2.2.10",
     "@tanstack/react-query": "^5.99.0",
     "buffer": "^6.0.3",

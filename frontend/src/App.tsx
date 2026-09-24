@@ -3,10 +3,10 @@ import HomePage from './pages/Home'
 import PayPage from './pages/Pay'
 import DashboardPage from './pages/Dashboard'
 import ProfilePage from './pages/Profile'
-import { usePayMeAuth } from './context/AuthContext'
+import { useCavopayAuth } from './context/AuthContext'
 
 function AuthCallbackPage() {
-  const { user } = usePayMeAuth()
+  const { user } = useCavopayAuth()
   return user ? <Navigate to="/dashboard" replace /> : <Navigate to="/" replace />
 }
 

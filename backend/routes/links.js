@@ -1,13 +1,14 @@
 const express = require("express");
 const { v4: uuidv4 } = require("uuid");
 const { supabase, memStore } = require("../supabase");
-const { requirePayMeSession } = require("../services/paymeSessionService");
+const { requireCavopaySession, ownsWalletAddress } = require("../services/sessions");
+const { schemas, validateBody } = require("../middleware/validate");
 
 const router = express.Router();
 
 // ─── POST /api/links ─────────────────────────────────────────────────────────
 // Create a new payment link
-router.post("/", requirePayMeSession, async (req, res) => {
+router.post("/", requireCavopaySession, validateBody(schemas.linkCreate), async (req, res) => {
   try {
     const { creatorAddress, amount, token, note } = req.body;
 
@@ -23,7 +24,7 @@ router.post("/", requirePayMeSession, async (req, res) => {
       const { data: wallet, error: walletErr } = await supabase
         .from("user_wallets")
         .select("wallet_address")
-        .eq("user_address", req.paymeSession.userKey)
+        .eq("user_address", req.authUserKey)
         .eq("wallet_address", creatorAddress.toLowerCase())
         .eq("wallet_type", "developer_controlled")
         .maybeSingle();
@@ -133,9 +134,12 @@ router.get("/:id", async (req, res) => {
 });
 
 // ─── GET /api/links/creator/:address ─────────────────────────────────────────
-// Get all links created by a wallet address
-router.get("/creator/:address", async (req, res) => {
+// The address must belong to the caller (M1).
+router.get("/creator/:address", requireCavopaySession, async (req, res) => {
   try {
+    if (!(await ownsWalletAddress(req.authUserKey, req.params.address))) {
+      return res.status(403).json({ error: "Links do not belong to this Cavopay account" });
+    }
     const address = req.params.address.toLowerCase();
 
     let records;

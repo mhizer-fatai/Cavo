@@ -8,7 +8,7 @@ type ReceiveModalProps = {
   claimLoading: boolean
   claimName: string
   loginLabel: string
-  paymeWalletAddress?: string
+  cavopayWalletAddress?: string
   profile: Profile | null
   qrValue: string
   onClaim: () => void
@@ -21,7 +21,7 @@ export default function ReceiveModal({
   claimLoading,
   claimName,
   loginLabel,
-  paymeWalletAddress,
+  cavopayWalletAddress,
   profile,
   qrValue,
   onClaim,
@@ -63,8 +63,8 @@ export default function ReceiveModal({
             <div className="form-group">
               <label className="form-label">Cavopay Wallet Address</label>
               <div className="link-box receive-link-box">
-                <span className="link-url">{paymeWalletAddress || 'Creating Cavopay wallet...'}</span>
-                {paymeWalletAddress && <CopyButton text={paymeWalletAddress} />}
+                <span className="link-url">{cavopayWalletAddress || 'Creating Cavopay wallet...'}</span>
+                {cavopayWalletAddress && <CopyButton text={cavopayWalletAddress} />}
               </div>
             </div>
 
@@ -91,7 +91,7 @@ export default function ReceiveModal({
                   value={claimName}
                   onChange={event => onClaimNameChange(event.target.value.toLowerCase().replace(/[^a-z0-9]/g, ''))}
                 />
-                <button className="btn btn-primary" onClick={onClaim} disabled={claimLoading || !claimName || !paymeWalletAddress}>
+                <button className="btn btn-primary" onClick={onClaim} disabled={claimLoading || !claimName || !cavopayWalletAddress}>
                   {claimLoading ? '...' : 'Claim'}
                 </button>
               </div>

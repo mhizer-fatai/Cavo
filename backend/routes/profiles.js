@@ -1,13 +1,14 @@
 const express = require("express");
 const { supabase, memStore } = require("../supabase");
-const { requirePayMeSession } = require("../services/paymeSessionService");
+const { requireCavopaySession } = require("../services/sessions");
+const { schemas, validateBody } = require("../middleware/validate");
 
 const router = express.Router();
 
 const RESERVED_USERNAMES = [
   "dashboard", "pay", "home", "api", "login", "logout", "signup",
   "register", "settings", "profile", "user", "auth", "app", "dev",
-  "test", "admin", "administrator", "support", "help", "payme",
+  "test", "admin", "administrator", "support", "help", "cavopay",
   "system", "root", "staff", "moderator", "billing", "security",
   "official", "team", "contact", "usdc", "eurc", "circle", "arc",
   "network", "wallet", "contract", "token", "checkout", "invoice",
@@ -99,7 +100,7 @@ function isValidAvatarUrl(value) {
   return /^data:image\/(png|jpe?g|webp);base64,[a-zA-Z0-9+/=]+$/.test(value);
 }
 
-router.post("/", requirePayMeSession, async (req, res) => {
+router.post("/", requireCavopaySession, validateBody(schemas.profileCreate), async (req, res) => {
   try {
     let { username, walletAddress } = req.body;
 
@@ -125,10 +126,10 @@ router.post("/", requirePayMeSession, async (req, res) => {
     }
 
     const ownerAddress = walletAddress;
-    if (req.paymeSession?.userKey !== ownerAddress) {
+    if (req.authUserKey !== ownerAddress) {
       return res.status(403).json({ error: "Cavopay session does not match this account" });
     }
-    let paymeWalletAddress = walletAddress;
+    let cavopayWalletAddress = walletAddress;
 
     if (useSupabase) {
       await refreshProfileSchema();
@@ -136,14 +137,14 @@ router.post("/", requirePayMeSession, async (req, res) => {
       const circleWallet = await findCircleWalletForOwner(ownerAddress);
 
       if (circleWallet?.wallet_address) {
-        paymeWalletAddress = circleWallet.wallet_address.toLowerCase();
+        cavopayWalletAddress = circleWallet.wallet_address.toLowerCase();
       }
     }
 
     const createdAt = new Date().toISOString();
     const record = hasOwnerAddress
-      ? { username, owner_address: ownerAddress, wallet_address: paymeWalletAddress, created_at: createdAt }
-      : { username, wallet_address: paymeWalletAddress, created_at: createdAt };
+      ? { username, owner_address: ownerAddress, wallet_address: cavopayWalletAddress, created_at: createdAt }
+      : { username, wallet_address: cavopayWalletAddress, created_at: createdAt };
 
     if (useSupabase) {
       // Check if this wallet already has a username
@@ -209,7 +210,7 @@ router.post("/", requirePayMeSession, async (req, res) => {
 
 // ─── GET /api/profiles/wallet/:walletAddress — Lookup by wallet ───────────────
 // IMPORTANT: This route must be defined BEFORE /:username to avoid routing conflicts
-router.patch("/:username/avatar", requirePayMeSession, async (req, res) => {
+router.patch("/:username/avatar", requireCavopaySession, validateBody(schemas.profileAvatar), async (req, res) => {
   try {
     const username = req.params.username.toLowerCase().trim();
     const avatarUrl = req.body?.avatarUrl ?? req.body?.avatar_url ?? null;
@@ -229,7 +230,7 @@ router.patch("/:username/avatar", requirePayMeSession, async (req, res) => {
 
       if (lookupErr) throw lookupErr;
       if (!existingProfile) return res.status(404).json({ error: "Profile not found" });
-      if (existingProfile.owner_address !== req.paymeSession?.userKey) {
+      if (existingProfile.owner_address !== req.authUserKey) {
         return res.status(403).json({ error: "Cavopay session does not own this profile" });
       }
 
@@ -246,7 +247,7 @@ router.patch("/:username/avatar", requirePayMeSession, async (req, res) => {
 
     const record = memStore.profiles.get(username);
     if (!record) return res.status(404).json({ error: "Profile not found" });
-    if (record.owner_address !== req.paymeSession?.userKey) {
+    if (record.owner_address !== req.authUserKey) {
       return res.status(403).json({ error: "Cavopay session does not own this profile" });
     }
     const nextRecord = { ...record, avatar_url: avatarUrl || null };
@@ -292,14 +293,14 @@ router.get("/wallet/:walletAddress", async (req, res) => {
       }
 
       if (error) throw error;
-      if (!data) return res.status(404).json({ error: "Profile not found" });
+      if (!data) return res.json(null);
 
       return res.json(data);
     } else {
       const record = Array.from(memStore.profiles.values()).find(
         (p) => p.wallet_address === walletAddress
       );
-      if (!record) return res.status(404).json({ error: "Profile not found" });
+      if (!record) return res.json(null);
       return res.json(record);
     }
   } catch (err) {

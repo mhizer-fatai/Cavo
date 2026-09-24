@@ -1,4 +1,4 @@
--- Login identities and Circle developer-controlled PayMe wallets.
+-- Login identities and Circle developer-controlled Cavo wallets.
 CREATE TABLE public.accounts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   auth_provider TEXT NOT NULL,

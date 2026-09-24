@@ -1,5 +1,5 @@
-const GOOGLE_STATE_KEY = 'payme.googleOAuthState'
-const GOOGLE_NONCE_KEY = 'payme.googleOAuthNonce'
+const GOOGLE_STATE_KEY = 'cavopay.googleOAuthState'
+const GOOGLE_NONCE_KEY = 'cavopay.googleOAuthNonce'
 const GOOGLE_GSI_SCRIPT = 'https://accounts.google.com/gsi/client'
 
 declare global {
@@ -54,9 +54,12 @@ function buildGoogleResultFromProfile(profile: {
   }
 }
 
-function buildGoogleResult(idToken: string) {
+function buildGoogleResult(idToken: string, expectedNonce?: string | null) {
   const payload = decodeJwtPayload(idToken)
   if (payload.aud !== getGoogleClientId()) throw new Error('Google login token was issued for a different app')
+  if (expectedNonce && payload.nonce !== expectedNonce) {
+    throw new Error('Google login nonce did not match. Please try again.')
+  }
   return buildGoogleResultFromProfile(payload, idToken)
 }
 
@@ -76,7 +79,7 @@ async function buildGoogleResultFromAccessToken(accessToken: string) {
   }
 
 function dispatchGoogleComplete(error: any, result: any = null) {
-  window.dispatchEvent(new CustomEvent('payme:google-login-complete', {
+  window.dispatchEvent(new CustomEvent('cavopay:google-login-complete', {
     detail: { error, errorMessage: error?.message || String(error || ''), result },
   }))
 }
@@ -163,15 +166,21 @@ export async function completeGoogleLoginFromRedirect() {
 
   const expectedState = sessionStorage.getItem(GOOGLE_STATE_KEY)
   const returnedState = hash.get('state') || query.get('state')
+  const expectedNonce = sessionStorage.getItem(GOOGLE_NONCE_KEY)
   sessionStorage.removeItem(GOOGLE_STATE_KEY)
   sessionStorage.removeItem(GOOGLE_NONCE_KEY)
 
-  if (expectedState && returnedState && expectedState !== returnedState) {
+  // Strict state binding (L4): we always generate a state for the redirect
+  // flow, so a missing or mismatched value means tampering or expiry.
+  if (!expectedState) {
+    throw new Error('Google login session expired. Please try again.')
+  }
+  if (returnedState !== expectedState) {
     throw new Error('Google login state did not match. Please try again.')
   }
 
   window.history.replaceState({}, document.title, '/auth/callback')
-  if (idToken) return buildGoogleResult(idToken)
+  if (idToken) return buildGoogleResult(idToken, expectedNonce)
   if (accessToken) return buildGoogleResultFromAccessToken(accessToken)
   throw new Error('Google login did not return account details')
 }

@@ -1,9 +1,9 @@
-# Cavopay — Stablecoin Neobank & Payment Account on Arc
+# Cavo — Stablecoin Neobank & Payment Account on Arc
 
 > **Settlement Network**: Arc Testnet  
 > **Core Assets**: USDC & EURC  
 
-Cavopay is a stablecoin-native payment account on Arc that lets users, creators, freelancers, and small businesses send, receive, and manage USDC and EURC through usernames, payment links, QR codes, and Circle-powered in-app wallets.
+Cavo is a stablecoin-native payment account on Arc that lets users, creators, freelancers, and small businesses send, receive, and manage USDC and EURC through usernames, payment links, QR codes, and Circle-powered in-app wallets.
 
 ---
 

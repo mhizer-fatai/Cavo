@@ -2,8 +2,8 @@ const tls = require("tls");
 
 const GMAIL_HOST = "smtp.gmail.com";
 const GMAIL_PORT = 465;
-const DEFAULT_GMAIL_USER = "payme.auth@gmail.com";
-const DEFAULT_EMAIL_FROM = "Cavopay <payme.auth@gmail.com>";
+const DEFAULT_GMAIL_USER = "cavopay.auth@gmail.com";
+const DEFAULT_EMAIL_FROM = "Cavopay <cavopay.auth@gmail.com>";
 
 function getEmailConfig() {
   const user = process.env.GMAIL_USER || DEFAULT_GMAIL_USER;
@@ -71,7 +71,7 @@ function dotStuff(body) {
 }
 
 function buildMessage({ from, to, subject, html, text }) {
-  const boundary = `payme_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  const boundary = `cavopay_${Date.now()}_${Math.random().toString(36).slice(2)}`;
   return [
     `From: ${sanitizeHeader(from)}`,
     `To: ${sanitizeHeader(to)}`,
@@ -105,12 +105,12 @@ async function sendEmail({ to, subject, html, text }) {
 
   try {
     await readResponse(socket);
-    await sendCommand(socket, "EHLO payme.local", ["250"]);
+    await sendCommand(socket, "EHLO cavopay.local", ["250"]);
     await sendCommand(socket, "AUTH LOGIN", ["334"]);
     await sendCommand(socket, Buffer.from(config.user).toString("base64"), ["334"]);
     await sendCommand(socket, Buffer.from(config.appPassword).toString("base64"), ["235"]);
     await sendCommand(socket, `MAIL FROM:<${config.user}>`, ["250"]);
-    await sendCommand(socket, `RCPT TO:<${to}>`, ["250", "251"]);
+    await sendCommand(socket, `RCPT TO:<${sanitizeHeader(to)}>`, ["250", "251"]);
     await sendCommand(socket, "DATA", ["354"]);
 
     const message = buildMessage({

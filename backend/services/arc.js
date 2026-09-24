@@ -34,12 +34,29 @@ const SUPPORTED_DESTINATION_CHAINS = Object.freeze({
     label: "Polygon Amoy",
     explorer: "https://amoy.polygonscan.com/tx/",
   },
+  Avalanche_Fuji: {
+    value: "Avalanche_Fuji",
+    label: "Avalanche Fuji",
+    explorer: "https://testnet.snowtrace.io/tx/",
+  },
+  Unichain_Sepolia: {
+    value: "Unichain_Sepolia",
+    label: "Unichain Sepolia",
+    explorer: "https://sepolia.uniscan.xyz/tx/",
+  },
+  Solana_Devnet: {
+    value: "Solana_Devnet",
+    label: "Solana Devnet",
+    explorer: "https://explorer.solana.com/tx/",
+    explorerSuffix: "?cluster=devnet",
+    nonEvm: "solana",
+  },
 });
 
 let adapter;
 let kit;
 
-function getArcKit() {
+function getCircleWalletsKit() {
   if (!process.env.CIRCLE_API_KEY || !process.env.CIRCLE_ENTITY_SECRET) {
     throw Object.assign(new Error("Circle API key and entity secret are required for Arc App Kit sends"), { status: 500 });
   }
@@ -59,6 +76,26 @@ function normalizeDestinationChain(value) {
     throw Object.assign(new Error("Unsupported destination chain"), { status: 400 });
   }
   return chain;
+}
+
+function isSolanaChain(chain) {
+  return !!SUPPORTED_DESTINATION_CHAINS[chain]?.nonEvm;
+}
+
+function isValidAddressForChain(chain, address) {
+  const text = String(address || "").trim();
+  if (isSolanaChain(chain)) {
+    // Base58-encoded 32-byte ed25519 address (case-sensitive — never lowercase).
+    return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(text);
+  }
+  return /^0x[a-fA-F0-9]{40}$/.test(text);
+}
+
+function normalizeAccountAddress(chain, address) {
+  const text = String(address || "").trim();
+  // EVM addresses are checksummed-insensitive hex: lowercase for comparison.
+  // Solana addresses are case-sensitive base58: preserve exactly.
+  return isSolanaChain(chain) ? text : text.toLowerCase();
 }
 
 function getBridgeTransactionHash(result) {
@@ -95,7 +132,7 @@ async function bridgeUsdcFromArc({ fromAddress, toAddress, destinationChain, amo
     throw Object.assign(new Error("Use a same-chain send for Arc Testnet transfers"), { status: 400 });
   }
 
-  const { adapter: circleAdapter, kit: appKit } = getArcKit();
+  const { adapter: circleAdapter, kit: appKit } = getCircleWalletsKit();
   const result = await appKit.bridge({
     from: {
       adapter: circleAdapter,
@@ -122,5 +159,11 @@ module.exports = {
   SOURCE_CHAIN,
   SUPPORTED_DESTINATION_CHAINS,
   bridgeUsdcFromArc,
+  getCircleWalletsKit,
+  findResultTransactionHash: getBridgeTransactionHash,
+  toJsonSafe,
   normalizeDestinationChain,
+  isSolanaChain,
+  isValidAddressForChain,
+  normalizeAccountAddress,
 };

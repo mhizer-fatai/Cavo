@@ -1,8 +1,23 @@
 import { ArrowUpRight } from 'lucide-react'
 import type { Payment } from '../../lib/api'
 
-export type LedgerPayment = Payment & { type?: 'received' | 'sent' }
-export type LedgerTab = 'all' | 'received' | 'sent'
+export interface SwapLegs {
+  tokenIn: string
+  amountIn: number | string
+  tokenOut: string
+  amountOut: number | string | null
+}
+
+export interface EarnLegs {
+  kind: 'deposit' | 'withdraw'
+  token: string
+  amount: number | string
+  shares: number | string
+  shareSymbol: string
+}
+
+export type LedgerPayment = Payment & { type?: 'received' | 'sent' | 'swap' | 'earn'; swap?: SwapLegs; earn?: EarnLegs }
+export type LedgerTab = 'all' | 'received' | 'sent' | 'swaps' | 'earn'
 
 type TransactionListProps = {
   activeTab: LedgerTab
@@ -10,6 +25,8 @@ type TransactionListProps = {
   payments: LedgerPayment[]
   receivedCount: number
   sentCount: number
+  swapCount: number
+  earnCount: number
   visibleCount?: number
   showViewAll?: boolean
   onTabChange: (tab: LedgerTab) => void
@@ -18,6 +35,7 @@ type TransactionListProps = {
   formatDate: (iso: string) => string
   getCounterpartyLabel: (payment: LedgerPayment) => string
   getExplorerUrl: (payment: Payment) => string
+  syncing?: boolean
 }
 
 export default function TransactionList({
@@ -26,6 +44,8 @@ export default function TransactionList({
   payments,
   receivedCount,
   sentCount,
+  swapCount,
+  earnCount,
   visibleCount,
   showViewAll,
   onTabChange,
@@ -34,6 +54,7 @@ export default function TransactionList({
   formatDate,
   getCounterpartyLabel,
   getExplorerUrl,
+  syncing,
 }: TransactionListProps) {
   const displayedPayments = payments.slice(0, visibleCount ?? payments.length)
 
@@ -49,9 +70,15 @@ export default function TransactionList({
         <button className={`tab-btn ${activeTab === 'sent' ? 'active' : ''}`} onClick={() => onTabChange('sent')}>
           Sent ({sentCount})
         </button>
+        <button className={`tab-btn ${activeTab === 'swaps' ? 'active' : ''}`} onClick={() => onTabChange('swaps')}>
+          Swaps ({swapCount})
+        </button>
+        <button className={`tab-btn ${activeTab === 'earn' ? 'active' : ''}`} onClick={() => onTabChange('earn')}>
+          Earn ({earnCount})
+        </button>
       </div>
 
-      {loading ? (
+      {loading && payments.length === 0 ? (
         <div className="load-wrap"><div className="loader" /> Fetching ledger...</div>
       ) : payments.length === 0 ? (
         <div className="empty">No transactions found</div>
@@ -59,10 +86,14 @@ export default function TransactionList({
         <div className="ledger-list">
           {displayedPayments.map(payment => {
             const isReceived = payment.type === 'received'
+            const isSwap = payment.type === 'swap'
+            const isEarn = payment.type === 'earn'
             const amountColor = isReceived ? 'var(--green)' : 'var(--text)'
             const sign = isReceived ? '+' : '-'
             const explorerUrl = getExplorerUrl(payment)
             const isPending = !payment.tx_hash
+            const swapLegs = payment.swap
+            const earnLegs = payment.earn
 
             return (
               <div
@@ -74,9 +105,21 @@ export default function TransactionList({
                 onKeyDown={(event) => { if (event.key === 'Enter') onSelectPayment(payment) }}
               >
                 <div className="lr-left">
-                  <div className="lr-amt" style={{ color: amountColor }}>
-                    {sign}{payment.amount} {payment.token}
-                  </div>
+                  {isSwap && swapLegs ? (
+                    <div className="lr-amt" style={{ color: 'var(--text)' }}>
+                      -{swapLegs.amountIn} {swapLegs.tokenIn} → +{swapLegs.amountOut ?? '…'} {swapLegs.tokenOut}
+                    </div>
+                  ) : isEarn && earnLegs ? (
+                    <div className="lr-amt" style={{ color: 'var(--text)' }}>
+                      {earnLegs.kind === 'deposit'
+                        ? <>-{earnLegs.amount} {earnLegs.token} → {earnLegs.shareSymbol}</>
+                        : <>+{earnLegs.amount} {earnLegs.token} ← {earnLegs.shareSymbol}</>}
+                    </div>
+                  ) : (
+                    <div className="lr-amt" style={{ color: amountColor }}>
+                      {sign}{payment.amount} {payment.token}
+                    </div>
+                  )}
                   <div className="lr-date">
                     {isPending ? 'Pending confirmation' : formatDate(payment.created_at)}
                   </div>
@@ -115,6 +158,12 @@ export default function TransactionList({
           {!showViewAll && visibleCount && payments.length > visibleCount && (
             <div className="ledger-loading-more">
               <div className="loader" style={{ width: 14, height: 14 }} /> Loading more history...
+            </div>
+          )}
+
+          {syncing && (
+            <div className="ledger-sync-note" aria-live="polite">
+              <span className="sync-dot" /> Syncing latest activity…
             </div>
           )}
         </div>

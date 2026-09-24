@@ -11,6 +11,11 @@ const memStore = {
   payments: [],
   profiles: new Map(),
   emailLoginCodes: [],
+  // Mainnet session security fallbacks (Supabase tables in db/11_security.sql)
+  cavoSessions: new Map(), // refreshHash -> session row
+  cavoRevokedJti: new Map(), // jti -> expiresAtMs
+  apiIdempotency: new Map(), // `${userKey}:${key}` -> { endpoint, response, statusCode }
+  cavoAuditLog: [],
 };
 
 let supabase = null;

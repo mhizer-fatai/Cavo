@@ -11,7 +11,7 @@ dist/
 build/
 out/
 .next/
-PAYME_DIST/
+CAVOPAY_DIST/
 .dev-logs/
 backend/recovery/
 
@@ -41,6 +41,7 @@ typechain-types/
 Thumbs.db
 
 # Misc
+backend/.transfer-scan-cache.json
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

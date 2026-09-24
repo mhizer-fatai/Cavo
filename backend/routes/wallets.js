@@ -10,15 +10,19 @@ const {
   getWalletTokenId,
   transferTokens,
   waitForTransactionHash,
-} = require('../services/circleWalletService');
-const { consumeApproval } = require('../services/paymePinService');
-const { requireMatchingUserKey, requirePayMeSession } = require('../services/paymeSessionService');
+} = require('../services/wallets');
+const { consumeApproval } = require('../services/pins');
+const { requireMatchingUserKey, requireCavopaySession } = require('../services/sessions');
+const { idempotencyGuard } = require('../middleware/idempotency');
+const { schemas, validateBody } = require('../middleware/validate');
 const {
   SOURCE_CHAIN,
   SUPPORTED_DESTINATION_CHAINS,
   bridgeUsdcFromArc,
+  isValidAddressForChain,
+  normalizeAccountAddress,
   normalizeDestinationChain,
-} = require('../services/arcAppKitService');
+} = require('../services/arc');
 
 // Supabase client (reuse from main app)
 let supabase;
@@ -26,10 +30,22 @@ function setSupabase(client) { supabase = client; }
 
 const pendingWalletCreates = new Map();
 const trackedTransactions = new Map();
+const TRACKING_TTL_MS = 24 * 60 * 60 * 1000;
+const TRACKING_MAX_RECORDS = 5000;
 const ARC_USDC_TOKEN_ADDRESS = '0x3600000000000000000000000000000000000000';
 const ARC_EURC_TOKEN_ADDRESS = '0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a';
 
 function createTrackingRecord(payload) {
+  // Bounded cache: evict expired records, then oldest-first past the cap.
+  const nowMs = Date.now();
+  for (const [id, record] of trackedTransactions) {
+    if (nowMs - new Date(record.createdAt).getTime() > TRACKING_TTL_MS) {
+      trackedTransactions.delete(id);
+    }
+  }
+  while (trackedTransactions.size >= TRACKING_MAX_RECORDS) {
+    trackedTransactions.delete(trackedTransactions.keys().next().value);
+  }
   const trackingId = crypto.randomUUID();
   const now = new Date().toISOString();
   const transaction = payload.transaction || null;
@@ -144,10 +160,10 @@ async function createAndStoreWallet(userAddress) {
  * Creates a Circle Dev-Controlled wallet for the user on Arc Testnet.
  * If the user already has one, returns the existing wallet.
  */
-router.post('/create', requirePayMeSession, requireMatchingUserKey, async (req, res) => {
+router.post('/create', requireCavopaySession, requireMatchingUserKey, async (req, res) => {
   try {
-    const userAddress = String(req.body.userKey || req.body.userAddress || '').toLowerCase().trim();
-    if (!userAddress) return res.status(400).json({ error: 'userKey required' });
+    const userAddress = req.authUserKey;
+    if (!userAddress) return res.status(401).json({ error: 'Cavopay session is missing identity' });
     if (!supabase) return res.status(500).json({ error: 'Supabase client not initialized' });
     const normalizedAddress = userAddress;
 
@@ -188,7 +204,7 @@ router.post('/create', requirePayMeSession, requireMatchingUserKey, async (req, 
       details: process.env.NODE_ENV !== 'production' ? details : undefined,
     });
   } finally {
-    const cleanupKey = String(req.body?.userKey || req.body?.userAddress || '').toLowerCase().trim();
+    const cleanupKey = req.authUserKey;
     if (cleanupKey) {
       pendingWalletCreates.delete(cleanupKey);
     }
@@ -199,10 +215,10 @@ router.post('/create', requirePayMeSession, requireMatchingUserKey, async (req, 
  * GET /api/wallets/me?address=0x...
  * Returns the user's Circle wallet info.
  */
-router.get('/me', requirePayMeSession, requireMatchingUserKey, async (req, res) => {
+router.get('/me', requireCavopaySession, requireMatchingUserKey, async (req, res) => {
   try {
-    const address = String(req.query.userKey || req.query.address || '').toLowerCase().trim();
-    if (!address) return res.status(400).json({ error: 'userKey query param required' });
+    const address = req.authUserKey;
+    if (!address) return res.status(401).json({ error: 'Cavopay session is missing identity' });
     if (!supabase) return res.status(500).json({ error: 'Supabase client not initialized' });
 
     const wallet = await getExistingWallet(address.toLowerCase());
@@ -230,9 +246,9 @@ router.get('/me', requirePayMeSession, requireMatchingUserKey, async (req, res) 
   }
 });
 
-router.post('/send', requirePayMeSession, requireMatchingUserKey, async (req, res) => {
+router.post('/send', requireCavopaySession, requireMatchingUserKey, validateBody(schemas.walletSend), idempotencyGuard, async (req, res) => {
   try {
-    const userKey = String(req.body.userKey || '').toLowerCase().trim();
+    const userKey = req.authUserKey;
     const walletAddress = String(req.body.walletAddress || '').toLowerCase().trim();
     const walletId = String(req.body.walletId || '').trim();
     const destinationAddress = String(req.body.destinationAddress || '').trim();
@@ -241,8 +257,8 @@ router.post('/send', requirePayMeSession, requireMatchingUserKey, async (req, re
     const approvalId = String(req.body.approvalId || '').trim();
     const token = String(req.body.token || 'USDC').toUpperCase();
 
-    if (!userKey || !walletAddress || !walletId || !destinationAddress || !amount || !approvalId) {
-      return res.status(400).json({ error: 'userKey, walletAddress, walletId, destinationAddress, amount, and approvalId are required' });
+    if (!walletAddress || !walletId || !destinationAddress || !amount || !approvalId) {
+      return res.status(400).json({ error: 'walletAddress, walletId, destinationAddress, amount, and approvalId are required' });
     }
     if (!/^0x[a-fA-F0-9]{40}$/.test(destinationAddress)) {
       return res.status(400).json({ error: 'Valid destination address is required' });
@@ -315,11 +331,11 @@ router.get('/destination-chains', (_req, res) => {
   return res.json(Object.values(SUPPORTED_DESTINATION_CHAINS));
 });
 
-router.get('/transactions/:trackingId', requirePayMeSession, async (req, res) => {
+router.get('/transactions/:trackingId', requireCavopaySession, async (req, res) => {
   try {
     const record = trackedTransactions.get(req.params.trackingId);
     if (!record) return res.status(404).json({ error: 'Transaction tracker not found' });
-    if (record.userKey !== req.paymeSession.userKey) {
+    if (record.userKey !== req.authUserKey) {
       return res.status(403).json({ error: 'Transaction tracker does not belong to this Cavopay session' });
     }
 
@@ -335,21 +351,21 @@ router.get('/transactions/:trackingId', requirePayMeSession, async (req, res) =>
   }
 });
 
-router.post('/bridge', requirePayMeSession, requireMatchingUserKey, async (req, res) => {
+router.post('/bridge', requireCavopaySession, requireMatchingUserKey, validateBody(schemas.walletBridge), idempotencyGuard, async (req, res) => {
   try {
-    const userKey = String(req.body.userKey || '').toLowerCase().trim();
+    const userKey = req.authUserKey;
     const walletAddress = String(req.body.walletAddress || '').toLowerCase().trim();
     const walletId = String(req.body.walletId || '').trim();
-    const destinationAddress = String(req.body.destinationAddress || '').toLowerCase().trim();
     const destinationChain = normalizeDestinationChain(req.body.destinationChain);
+    const destinationAddress = normalizeAccountAddress(destinationChain, req.body.destinationAddress);
     const amount = String(req.body.amount || '').trim();
     const approvalId = String(req.body.approvalId || '').trim();
 
-    if (!userKey || !walletAddress || !walletId || !destinationAddress || !destinationChain || !amount || !approvalId) {
-      return res.status(400).json({ error: 'userKey, walletAddress, walletId, destinationAddress, destinationChain, amount, and approvalId are required' });
+    if (!walletAddress || !walletId || !destinationAddress || !destinationChain || !amount || !approvalId) {
+      return res.status(400).json({ error: 'walletAddress, walletId, destinationAddress, destinationChain, amount, and approvalId are required' });
     }
-    if (!/^0x[a-f0-9]{40}$/.test(destinationAddress)) {
-      return res.status(400).json({ error: 'Valid destination address is required' });
+    if (!isValidAddressForChain(destinationChain, destinationAddress)) {
+      return res.status(400).json({ error: 'Destination address does not match the destination chain format' });
     }
     if (destinationChain === SOURCE_CHAIN) {
       return res.status(400).json({ error: 'Use /wallets/send for Arc Testnet transfers' });

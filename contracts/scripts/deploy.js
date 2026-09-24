@@ -2,7 +2,7 @@ const { ethers } = require("hardhat");
 
 async function main() {
   const [deployer] = await ethers.getSigners();
-  console.log("Deploying PayMe with account:", deployer.address);
+  console.log("Deploying Cavopay with account:", deployer.address);
 
   const balance = await ethers.provider.getBalance(deployer.address);
   console.log("Account balance:", ethers.formatUnits(balance, 18), "USDC");
@@ -11,12 +11,12 @@ async function main() {
   const FEE_WALLET = deployer.address;
   const FEE_BPS = 50; // 0.5%
 
-  const PayMe = await ethers.getContractFactory("PayMe");
-  const payMe = await PayMe.deploy(FEE_WALLET, FEE_BPS);
+  const Cavopay = await ethers.getContractFactory("Cavopay");
+  const payMe = await Cavopay.deploy(FEE_WALLET, FEE_BPS);
   await payMe.waitForDeployment();
 
   const address = await payMe.getAddress();
-  console.log("PayMe deployed to:", address);
+  console.log("Cavopay deployed to:", address);
   console.log("   Fee wallet:", FEE_WALLET);
   console.log("   Fee:", FEE_BPS, "bps (0.5%)");
   console.log("   View on explorer: https://testnet.arcscan.app/address/" + address);

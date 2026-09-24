@@ -1,83 +1,247 @@
+import { useEffect, useRef, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowRight, CircleDollarSign, Globe, Link2, Share, ShieldCheck, Smartphone, Zap } from 'lucide-react'
+import {
+  ArrowLeftRight,
+  ArrowRight,
+  Check,
+  CircleDollarSign,
+  Globe,
+  KeyRound,
+  Link2,
+  PiggyBank,
+  QrCode,
+  Send,
+  ShieldCheck,
+  TrendingUp,
+  Zap,
+} from 'lucide-react'
 import Navbar from '../components/Navbar'
 import WalletButton from '../components/WalletButton'
-import { usePayMeAuth } from '../context/AuthContext'
+import { useCavopayAuth } from '../context/AuthContext'
 
-const FEATURES = [
-  { icon: <Globe size={24} />, title: 'Cavopay Wallet', desc: 'A simple app balance powered by your Cavopay wallet, built for sending and receiving without crypto jargon.' },
-  { icon: <ShieldCheck size={24} />, title: 'Secured Sending', desc: 'Every in-app send is protected by your 4-digit Cavopay payment PIN.' },
-  { icon: <CircleDollarSign size={24} />, title: 'USDC & EURC', desc: 'Accept stablecoin payments directly into your Cavopay wallet on Arc.' },
-  { icon: <Smartphone size={24} />, title: 'Scan to Pay', desc: 'Generated QR codes for payment links make mobile checkout simple.' },
-  { icon: <Zap size={24} />, title: 'Fast Settlement', desc: 'Payments settle quickly on Arc so balances and history stay easy to follow.' },
-  { icon: <Link2 size={24} />, title: 'Permanent Profile', desc: 'Claim a custom @username for a permanent, shareable payment page.' },
+function Reveal({ children, delay = 0, className = '' }: { children: ReactNode; delay?: number; className?: string }) {
+  const ref = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    const node = ref.current
+    if (!node) return
+    const observer = new IntersectionObserver(
+      entries => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            node.classList.add('reveal-visible')
+            observer.disconnect()
+          }
+        })
+      },
+      { threshold: 0.15 },
+    )
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [])
+
+  return (
+    <div ref={ref} className={`reveal ${className}`} style={delay ? { transitionDelay: `${delay}ms` } : undefined}>
+      {children}
+    </div>
+  )
+}
+
+const MARQUEE_ITEMS = [
+  { icon: <Send size={14} />, label: 'Send USDC in seconds' },
+  { icon: <ArrowLeftRight size={14} />, label: 'Swap USDC ⇄ EURC instantly' },
+  { icon: <PiggyBank size={14} />, label: 'Earn on idle balances' },
+  { icon: <QrCode size={14} />, label: 'Receive via @username' },
+  { icon: <Link2 size={14} />, label: 'Payment links & QR checkout' },
+  { icon: <ShieldCheck size={14} />, label: 'PIN-protected sends' },
+  { icon: <Zap size={14} />, label: 'Sub-second settlement' },
 ]
 
-const HOW_IT_WORKS = [
-  { icon: <Link2 size={32} />, title: 'Create a Link or Username', desc: 'Login, create your Cavopay wallet, and claim a username or generate a payment link.' },
-  { icon: <Share size={32} />, title: 'Share with Anyone', desc: 'Send your link by text, email, or social media, or show your QR code.' },
-  { icon: <CircleDollarSign size={32} />, title: 'Get Paid', desc: 'The payer connects their wallet and pays. Funds arrive in your Cavopay wallet.' },
+const STATS = [
+  { icon: <Zap size={18} />, value: 'Sub-second', label: 'deterministic finality on Arc' },
+  { icon: <CircleDollarSign size={18} />, value: 'USDC gas', label: 'predictable, stable fees' },
+  { icon: <Link2 size={18} />, value: '@usernames', label: 'human‑readable payment handles' },
+  { icon: <ShieldCheck size={18} />, value: '1:1 reserves', label: 'regulated stablecoins only' },
+]
+
+const CORE_FEATURES = [
+  {
+    icon: <Send size={22} />,
+    title: 'Send',
+    desc: 'Pay any @username or wallet address in USDC or EURC. Every transfer is confirmed with your 4-digit Payment PIN — no seed phrases, no browser extensions.',
+  },
+  {
+    icon: <QrCode size={22} />,
+    title: 'Receive',
+    desc: 'Claim a permanent @username, share a payment link, or show your QR code. Funds land directly in your built-in Circle wallet on Arc.',
+  },
+  {
+    icon: <ArrowLeftRight size={22} />,
+    title: 'Swap',
+    desc: 'Convert between USDC and EURC instantly at the best available rate, with your quoted minimum guaranteed. FX without leaving the app.',
+  },
+  {
+    icon: <PiggyBank size={22} />,
+    title: 'Earn',
+    desc: 'Put idle USDC and EURC to work in savings vaults and watch yield accrue on your dashboard — one tap to deposit, one tap to withdraw.',
+  },
+]
+
+const WHY_POINTS = [
+  { icon: <KeyRound size={18} />, title: 'No seed phrases', desc: 'Sign in with Google or an email code. Your keys live in Circle-backed wallets, not in a screenshot.' },
+  { icon: <ShieldCheck size={18} />, title: 'PIN-first security', desc: 'A 4-digit PIN with lockouts, spending limits and one-time approvals guards every send and swap.' },
+  { icon: <Link2 size={18} />, title: 'Human payment handles', desc: 'Claim @you once and get paid forever. Shareable links and QR codes do the rest.' },
+  { icon: <Zap size={18} />, title: 'Instant settlement', desc: 'Arc finality means balances and history update in seconds, not block confirmations.' },
+  { icon: <Globe size={18} />, title: 'Cross-chain by default', desc: 'Deposit USDC from Ethereum, Base, Arbitrum, Optimism or Polygon straight into Arc.' },
+  { icon: <TrendingUp size={18} />, title: 'Money that works', desc: 'Hold, move and earn — your stablecoin account is a bank account, not just a wallet.' },
+]
+
+const STEPS = [
+  { icon: <Link2 size={26} />, title: 'Create your account', desc: 'Sign in, get an in-app Circle wallet automatically, and claim your @username.' },
+  { icon: <Send size={26} />, title: 'Fund it your way', desc: 'Receive from any Cavopay user, share a payment link, or bridge USDC from another chain.' },
+  { icon: <ArrowLeftRight size={26} />, title: 'Send, swap and earn', desc: 'Move money by handle, convert between currencies, and grow idle balances in vaults.' },
 ]
 
 export default function HomePage() {
-  const { user } = usePayMeAuth()
-  const isLoggedIn = !!user?.paymeSessionToken
+  const { user } = useCavopayAuth()
+  const isLoggedIn = !!user?.cavopaySessionToken
+  const marqueeItems = [...MARQUEE_ITEMS, ...MARQUEE_ITEMS]
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
       <Navbar />
 
-      <section className="hero">
-        <div className="live-chip">
-          <span className="live-dot" />
-          Live on Arc Testnet
-        </div>
-
-        <h1 className="hero-title">
-          Get paid in <span className="gradient-text">stablecoins.</span>
-          <br />
-          In seconds.
-        </h1>
-        <p className="hero-sub">
-          Create a shareable payment link or claim a permanent username. Accept USDC or EURC directly to your Cavopay wallet.
-        </p>
-
-        <div className="hero-btns">
-          {!isLoggedIn ? (
-            <WalletButton className="btn-lg" />
-          ) : (
-            <Link to="/dashboard" className="btn btn-primary btn-lg">
-              Go to Dashboard <ArrowRight size={18} />
-            </Link>
-          )}
+      <section className="home-hero">
+        <div className="container">
+          <span className="live-chip">
+            <span className="live-dot" />
+            Live on Arc Testnet
+          </span>
+          <h1 className="home-hero-title">
+            Send, receive, swap and earn.
+            <br />
+            <span className="gradient-text">One stablecoin account.</span>
+          </h1>
+          <p className="hero-sub">
+            Cavopay is a neobank for USDC and EURC. A @username instead of a hex address, a PIN instead
+            of a seed phrase, and settlement that lands in seconds.
+          </p>
+          <div className="hero-btns">
+            {!isLoggedIn ? (
+              <WalletButton className="btn-lg" />
+            ) : (
+              <Link to="/dashboard" className="btn btn-primary btn-lg">
+                Open Dashboard <ArrowRight size={18} />
+              </Link>
+            )}
+            <a href="#what" className="btn btn-secondary btn-lg">
+              What is Cavopay?
+            </a>
+          </div>
         </div>
       </section>
 
-      <section className="how-it-works">
+      <div className="marquee" aria-hidden="true">
+        <div className="marquee-track">
+          {marqueeItems.map((item, index) => (
+            <span className="marquee-item" key={index}>
+              <span className="marquee-icon">{item.icon}</span>
+              {item.label}
+              <span className="marquee-sep" />
+            </span>
+          ))}
+        </div>
+      </div>
+
+      <section className="home-section" id="what">
         <div className="container">
-          <h2 className="sec-title">How It <span className="gradient-text">Works</span></h2>
-          <div className="hiw-grid">
-            {HOW_IT_WORKS.map(step => (
-              <div key={step.title} className="hiw-card glass">
-                <div className="hiw-icon">{step.icon}</div>
-                <h3 className="hiw-title">{step.title}</h3>
-                <p className="hiw-desc">{step.desc}</p>
-              </div>
+          <div className="home-about-grid">
+            <Reveal>
+              <span className="home-kicker">What is Cavopay</span>
+              <h2 className="home-h2">A bank account built on stablecoins</h2>
+              <p className="home-body">
+                Cavopay gives you a payment account for digital dollars and euros. Behind the scenes your
+                money lives in Circle-backed wallets on the Arc network — a blockchain built by the issuer
+                of USDC for payments. In front, it feels like any modern banking app.
+              </p>
+              <p className="home-body">
+                You hold real USDC and EURC, the world&rsquo;s largest regulated stablecoins. You move them by
+                username, link or QR. You swap between currencies instantly. And soon, you put idle balances
+                to work — all without touching a seed phrase or paying unpredictable gas fees.
+              </p>
+            </Reveal>
+            <div className="home-stats-grid">
+              {STATS.map((stat, index) => (
+                <Reveal key={stat.label} delay={index * 70}>
+                  <div className="stat-card">
+                    <span className="stat-icon">{stat.icon}</span>
+                    <strong>{stat.value}</strong>
+                    <span className="stat-label">{stat.label}</span>
+                  </div>
+                </Reveal>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="home-section home-section-tint">
+        <div className="container">
+          <Reveal className="home-center">
+            <span className="home-kicker">Everything in one app</span>
+            <h2 className="home-h2">Four things your money should do. One place to do it.</h2>
+          </Reveal>
+          <div className="home-feature-grid">
+            {CORE_FEATURES.map((feature, index) => (
+              <Reveal key={feature.title} delay={index * 80}>
+                <div className="feature-card">
+                  <span className="feature-icon">{feature.icon}</span>
+                  <div className="feature-title">{feature.title}</div>
+                  <p className="feature-desc">{feature.desc}</p>
+                </div>
+              </Reveal>
             ))}
           </div>
         </div>
       </section>
 
-      <section className="features">
+      <section className="home-section">
         <div className="container">
-          <h2 className="sec-title">Why <span className="gradient-text">Cavopay</span>?</h2>
-          <div className="feat-grid">
-            {FEATURES.map(feature => (
-              <div key={feature.title} className="feat-card">
-                <div className="feat-icon-wrap">{feature.icon}</div>
-                <div className="feat-title">{feature.title}</div>
-                <div className="feat-desc">{feature.desc}</div>
-              </div>
+          <Reveal className="home-center">
+            <span className="home-kicker">Why Cavopay</span>
+            <h2 className="home-h2">Crypto money, without the crypto headaches</h2>
+          </Reveal>
+          <div className="home-why-grid">
+            {WHY_POINTS.map((point, index) => (
+              <Reveal key={point.title} delay={(index % 3) * 70}>
+                <div className="why-item">
+                  <span className="why-icon">{point.icon}</span>
+                  <div>
+                    <div className="why-title">{point.title}</div>
+                    <p className="why-desc">{point.desc}</p>
+                  </div>
+                </div>
+              </Reveal>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="home-section home-section-tint">
+        <div className="container">
+          <Reveal className="home-center">
+            <span className="home-kicker">How it works</span>
+            <h2 className="home-h2">Up and running in three steps</h2>
+          </Reveal>
+          <div className="hiw-grid">
+            {STEPS.map((step, index) => (
+              <Reveal key={step.title} delay={index * 80}>
+                <div className="hiw-card card">
+                  <div className="hiw-icon">{step.icon}</div>
+                  <h3 className="hiw-title">{step.title}</h3>
+                  <p className="hiw-desc">{step.desc}</p>
+                </div>
+              </Reveal>
             ))}
           </div>
         </div>
@@ -85,23 +249,27 @@ export default function HomePage() {
 
       <section className="cta-section">
         <div className="container">
-          <div className="cta-card glass">
-            <h2 className="cta-title">Ready to get paid?</h2>
-            <p className="cta-desc">Create your Cavopay wallet and start receiving USDC or EURC payments.</p>
-            {!isLoggedIn ? (
-              <WalletButton className="btn-lg" />
-            ) : (
-              <Link to="/dashboard" className="btn btn-primary btn-lg">Open Dashboard</Link>
-            )}
-          </div>
+          <Reveal>
+            <div className="cta-card">
+              <h2 className="cta-title">Your stablecoin account is one sign-in away</h2>
+              <p className="cta-desc">Create your Cavopay wallet, claim your @username, and start moving money in seconds.</p>
+              {!isLoggedIn ? (
+                <WalletButton className="btn-lg" />
+              ) : (
+                <Link to="/dashboard" className="btn btn-primary btn-lg">
+                  Open Dashboard <ArrowRight size={18} />
+                </Link>
+              )}
+            </div>
+          </Reveal>
         </div>
       </section>
 
       <footer className="footer">
         <div className="container footer-inner">
           <div className="footer-left">
-            <img src="/cavopay-logo.png" alt="Cavopay" style={{ width: 24, height: 24, borderRadius: 6, display: 'inline-block', verticalAlign: 'middle', marginRight: 8 }} />
-            <span style={{ fontWeight: 600, color: '#fff' }}>Cavopay</span>
+            <img src="/cavopay-logo.png" alt="Cavopay" style={{ width: 24, height: 24, borderRadius: 6, marginRight: 8 }} />
+            <span style={{ fontWeight: 600, color: 'var(--ink)' }}>Cavopay</span>
           </div>
           <div className="footer-right">
             Built on <a href="https://arc.network" target="_blank" rel="noopener noreferrer">Arc Network</a>

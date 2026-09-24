@@ -1,5 +1,5 @@
 import { createConfig, http } from 'wagmi'
-import { injected, coinbaseWallet } from 'wagmi/connectors'
+import { injected } from 'wagmi/connectors'
 import { arcTestnet } from './config'
 import { baseSepolia, arbitrumSepolia, optimismSepolia, polygonAmoy, sepolia } from 'viem/chains'
 
@@ -7,7 +7,6 @@ export const wagmiConfig = createConfig({
   chains: [arcTestnet, baseSepolia, arbitrumSepolia, optimismSepolia, polygonAmoy, sepolia],
   connectors: [
     injected(), // Handles MetaMask, TrustWallet, etc.
-    coinbaseWallet({ appName: 'Cavopay', preference: 'all' }),
   ],
   transports: {
     [arcTestnet.id]: http('https://rpc.testnet.arc.network'),
