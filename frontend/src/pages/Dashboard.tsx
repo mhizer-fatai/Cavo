@@ -19,7 +19,7 @@ import SwapModal, { type SwapStep, type SwapToken } from '../features/swap/SwapM
 import EarnModal, { type EarnMode, type EarnStep, type EarnToken } from '../features/earn/EarnModal'
 import EarnSection from '../features/earn/EarnSection'
 import type { BridgeStage } from '../components/BridgeStatusTimeline'
-import { ARC_TESTNET_CHAIN, PAYMENT_SOURCE_CHAINS, CAVO_SECURITY_QUESTIONS, CCTP_WITHDRAW_CHAINS, TOKENS, getPaymentSourceChain, getWithdrawChain, isValidWithdrawAddress } from '../lib/config'
+import { ARC_TESTNET_CHAIN, PAYMENT_SOURCE_CHAINS, CAVO_SECURITY_QUESTIONS, CCTP_WITHDRAW_CHAINS, TOKENS, getPaymentSourceChain, isValidWithdrawAddress } from '../lib/config'
 import {
   approveCavoPinTransaction,
   bridgeDeveloperControlledTransfer,
@@ -377,8 +377,6 @@ export default function DashboardPage() {
   const [earnStep, setEarnStep] = useState<EarnStep>('details')
   const [earnAmount, setEarnAmount] = useState('')
   const [earnToken, setEarnToken] = useState<EarnToken>('USDC')
-  const [earnDestinationChain, setEarnDestinationChain] = useState<string>(ARC_TESTNET_CHAIN)
-  const [earnDestinationAddress, setEarnDestinationAddress] = useState('')
   const [earnError, setEarnError] = useState<string | null>(null)
   const [isEarning, setIsEarning] = useState(false)
   const [earnVaults, setEarnVaults] = useState<EarnVault[]>([])
@@ -1437,8 +1435,6 @@ export default function DashboardPage() {
     setEarnMode(mode)
     if (token) setEarnToken(token)
     setEarnAmount('')
-    setEarnDestinationChain(ARC_TESTNET_CHAIN)
-    setEarnDestinationAddress('')
     setEarnError(null)
     setEarnStep('details')
     setCavoPin('')
@@ -1553,8 +1549,6 @@ export default function DashboardPage() {
           amount: earnAmount,
           token: earnToken,
           transactionType: 'earn',
-          bridgeTo: earnDestinationChain,
-          bridgeAddress: earnDestinationChain === ARC_TESTNET_CHAIN ? cavoWalletAddress : earnDestinationAddress,
         })
         const result = await withdrawEarn({
           userKey: activeUserKey,
@@ -1563,8 +1557,8 @@ export default function DashboardPage() {
           token: earnToken,
           shares: earnAmount,
           approvalId: approval.approvalId,
-          destinationChain: earnDestinationChain,
-          destinationAddress: earnDestinationChain === ARC_TESTNET_CHAIN ? cavoWalletAddress : earnDestinationAddress,
+          destinationChain: ARC_TESTNET_CHAIN,
+          destinationAddress: cavoWalletAddress,
         })
         setIsEarnModalOpen(false)
         setEarnSuccess({
@@ -1574,9 +1568,8 @@ export default function DashboardPage() {
           shares: String(result.shares),
           shareSymbol,
           txHash: result.txHash || undefined,
-          bridgeTxHash: result.bridgeTxHash || undefined,
-          destinationChain: result.destinationChain || ARC_TESTNET_CHAIN,
-          destinationLabel: getWithdrawChain(result.destinationChain || ARC_TESTNET_CHAIN).label,
+          destinationChain: ARC_TESTNET_CHAIN,
+          destinationLabel: undefined,
         })
       }
       await wait(1500)
@@ -2301,10 +2294,6 @@ export default function DashboardPage() {
           walletAddress={cavoWalletAddress}
           availableBalance={earnToken === 'USDC' ? usdcDisplay : eurcDisplay}
           positionShares={Number(earnPositions.find(p => String(p.token).toUpperCase() === earnToken)?.shares) || 0}
-          earnDestinationChain={earnDestinationChain}
-          earnDestinationAddress={earnDestinationAddress}
-          onDestinationChainChange={setEarnDestinationChain}
-          onDestinationAddressChange={setEarnDestinationAddress}
           onAmountChange={setEarnAmount}
           onTokenChange={(token) => {
             setEarnToken(token)

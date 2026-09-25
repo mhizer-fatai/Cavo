@@ -149,6 +149,11 @@ router.post("/withdraw", requireCavoSession, requireMatchingUserKey, validateBod
     if (!walletAddress || !walletId || !token || !shares || !approvalId) {
       return res.status(400).json({ error: "walletAddress, walletId, token, shares, and approvalId are required" });
     }
+    if (destinationChain !== "Arc_Testnet") {
+      // Earn withdrawals always settle to the dashboard (Arc) balance;
+      // the separate Withdraw feature is the CCTP path.
+      throw Object.assign(new Error("Earn withdrawals always settle to your Arc balance. Use Withdraw to move funds cross-chain."), { status: 400 });
+    }
     const entry = earnService.getVault(token);
     await requireOwnWallet(userKey, walletAddress, walletId);
 
@@ -162,9 +167,6 @@ router.post("/withdraw", requireCavoSession, requireMatchingUserKey, validateBod
       // Approval covers the share burn; amount echoes shares for binding.
       amount: shares,
       token,
-      // The bridge leg must match what the approval bound.
-      bridgeTo: destinationChain,
-      bridgeAddress: destinationAddress,
     });
 
     const result = await earnService.withdraw({
