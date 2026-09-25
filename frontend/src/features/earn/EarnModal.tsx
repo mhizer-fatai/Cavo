@@ -1,6 +1,6 @@
 import { PiggyBank, X } from 'lucide-react'
 import PinDotsInput from '../../components/PinDotsInput'
-import { CAVO_SECURITY_QUESTIONS } from '../../lib/config'
+import { CAVO_SECURITY_QUESTIONS, CCTP_WITHDRAW_CHAINS, getWithdrawChain, isValidWithdrawAddress } from '../../lib/config'
 import type { EarnVault } from '../../lib/api'
 
 export type EarnToken = 'USDC' | 'EURC'
@@ -23,6 +23,10 @@ type EarnModalProps = {
   walletAddress: string
   availableBalance: string
   positionShares: number
+  earnDestinationChain: string
+  earnDestinationAddress: string
+  onDestinationChainChange: (value: string) => void
+  onDestinationAddressChange: (value: string) => void
   onAmountChange: (value: string) => void
   onTokenChange: (token: EarnToken) => void
   onModeChange: (mode: EarnMode) => void
@@ -76,6 +80,10 @@ export default function EarnModal({
   walletAddress,
   availableBalance,
   positionShares,
+  earnDestinationChain,
+  earnDestinationAddress,
+  onDestinationChainChange,
+  onDestinationAddressChange,
   onAmountChange,
   onTokenChange,
   onModeChange,
@@ -112,8 +120,12 @@ export default function EarnModal({
     && amountNumber > balanceNumber
   const overShares = mode === 'withdraw'
     && Number.isFinite(amountNumber) && amountNumber > positionShares
+  const destinationValid = mode !== 'withdraw'
+    || earnDestinationChain === 'Arc_Testnet'
+    || (earnToken === 'USDC' && isValidWithdrawAddress(earnDestinationChain, earnDestinationAddress))
   const canReview = Number.isFinite(amountNumber) && amountNumber > 0
     && !!walletAddress && !overBalance && !overShares && !depositsBlocked
+    && destinationValid
   const canSubmitPin = cavoPin.length === 4 && (
     hasCavoPin || (confirmPin.length === 4 && securityAnswerOne.trim() && securityAnswerTwo.trim())
   )
@@ -191,14 +203,41 @@ export default function EarnModal({
             {mode === 'withdraw' && (
               <div className="form-group">
                 <label className="form-label">Withdraw to</label>
-                <div className="pin-summary">
-                  <div className="pin-summary-row">
-                    <span>Destination</span>
-                    <strong>Dashboard balance · Arc Testnet</strong>
+                <select
+                  className="form-input"
+                  value={earnDestinationChain}
+                  onChange={event => onDestinationChainChange(event.target.value)}
+                  disabled={isEarning}
+                >
+                  {CCTP_WITHDRAW_CHAINS.map(chain => (
+                    <option key={chain.value} value={chain.value}>{chain.label}</option>
+                  ))}
+                </select>
+                {earnDestinationChain !== 'Arc_Testnet' && (
+                  <input
+                    type="text"
+                    value={earnDestinationAddress}
+                    onChange={event => onDestinationAddressChange(event.target.value)}
+                    placeholder={earnDestinationChain === 'Solana_Devnet' ? 'Solana base58 address' : '0x… destination address'}
+                    className="form-input"
+                    style={{ marginTop: 8 }}
+                    disabled={isEarning}
+                  />
+                )}
+                {earnDestinationAddress.trim() !== '' && !isValidWithdrawAddress(earnDestinationChain, earnDestinationAddress) && (
+                  <div className="error-text" style={{ marginTop: 4 }}>
+                    Invalid {earnDestinationChain === 'Solana_Devnet' ? 'Solana' : 'EVM'} address for the selected chain.
                   </div>
-                </div>
+                )}
+                {earnToken === 'EURC' && earnDestinationChain !== 'Arc_Testnet' && (
+                  <div className="error-text" style={{ marginTop: 4 }}>
+                    Cross-chain withdrawals are USDC-only. Select Arc Testnet for EURC.
+                  </div>
+                )}
                 <div className="muted-small" style={{ marginTop: 6 }}>
-                  Earn withdrawals always settle to your dashboard balance in seconds. To move funds cross-chain, use Send afterwards.
+                  {earnDestinationChain === 'Arc_Testnet'
+                    ? 'Earn withdrawals settle to your dashboard balance in seconds. Select another chain to bridge via Circle CCTP (~15-20 min).'
+                    : 'USDC-only via Circle CCTP. Cross-chain arrivals take ~15-20 minutes.'}
                 </div>
               </div>
             )}
@@ -268,7 +307,11 @@ export default function EarnModal({
               {mode === 'withdraw' && (
                 <div className="pin-summary-row">
                   <span>Destination</span>
-                  <strong>Dashboard balance · Arc Testnet</strong>
+                  <strong>
+                    {earnDestinationChain === 'Arc_Testnet'
+                      ? 'Dashboard balance · Arc Testnet'
+                      : `${getWithdrawChain(earnDestinationChain).label} · ${earnDestinationAddress.trim() ? shortenAddress(earnDestinationAddress) : '—'}`}
+                  </strong>
                 </div>
               )}
               <div className="pin-summary-row">

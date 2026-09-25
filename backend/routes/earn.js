@@ -162,6 +162,9 @@ router.post("/withdraw", requireCavoSession, requireMatchingUserKey, validateBod
       // Approval covers the share burn; amount echoes shares for binding.
       amount: shares,
       token,
+      // The bridge leg must match what the approval bound.
+      bridgeTo: destinationChain,
+      bridgeAddress: destinationAddress,
     });
 
     const result = await earnService.withdraw({

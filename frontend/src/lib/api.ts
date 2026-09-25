@@ -637,6 +637,8 @@ export async function approveCavoPinTransaction(payload: {
   walletId: string
   destinationAddress: string
   destinationChain?: string
+  bridgeTo?: string
+  bridgeAddress?: string
   amount: string
   token?: 'USDC' | 'EURC'
   tokenOut?: 'USDC' | 'EURC'

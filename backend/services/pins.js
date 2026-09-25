@@ -370,6 +370,10 @@ async function createApproval(payload) {
   const destinationChain = normalizeDestinationChain(payload.destinationChain);
   // Chain-aware: EVM lowercases, Solana base58 is case-sensitive (never touch).
   const destinationAddress = normalizeAccountAddress(destinationChain, payload.destinationAddress);
+  // Cross-chain bridge leg (earn withdrawals): only bound when explicitly
+  // provided; "Arc_Testnet" means no bridge.
+  const bridgeTo = payload.bridgeTo && payload.bridgeTo !== DEFAULT_DESTINATION_CHAIN ? String(payload.bridgeTo).trim() : null;
+  const bridgeAddress = bridgeTo ? normalizeAccountAddress(bridgeTo, payload.bridgeAddress) : null;
   const amount = normalizeAmount(payload.amount);
   const transactionType = String(payload.transactionType || "send").toLowerCase();
   const token = String(payload.token || "USDC").toUpperCase();
@@ -384,6 +388,12 @@ async function createApproval(payload) {
   }
   if (!isValidAddressForChain(destinationChain, destinationAddress)) {
     throw Object.assign(new Error("Approval destination does not match the destination chain format"), { status: 400 });
+  }
+  if (bridgeTo && !isValidAddressForChain(bridgeTo, bridgeAddress)) {
+    throw Object.assign(new Error("Bridge destination does not match the bridge chain format"), { status: 400 });
+  }
+  if (transactionType === "earn" && bridgeTo && token !== "USDC") {
+    throw Object.assign(new Error("Cross-chain earn withdrawals are USDC-only (Circle CCTP)"), { status: 400 });
   }
   if (!["send", "swap", "earn"].includes(transactionType)) {
     throw Object.assign(new Error("Unsupported approval type"), { status: 400 });
@@ -462,6 +472,9 @@ async function createApproval(payload) {
     expires_at: new Date(Date.now() + APPROVAL_TTL_MS).toISOString(),
     used_at: null,
     created_at: new Date().toISOString(),
+    // Only persisted when set so Arc-only approvals keep working before the
+    // 12_bridge_binding.sql migration adds the columns.
+    ...(bridgeTo ? { bridge_to: bridgeTo, bridge_address: bridgeAddress } : {}),
   };
 
   if (await supportsTables()) {
@@ -478,7 +491,7 @@ async function createApproval(payload) {
     destinationChain,
     amount,
     token: approvalToken,
-    metadata: { approvalId: approval.id, expiresAt: approval.expires_at, transactionType },
+    metadata: { approvalId: approval.id, expiresAt: approval.expires_at, transactionType, ...(bridgeTo ? { bridgeTo, bridgeAddress } : {}) },
   });
 
   return { approvalId: approval.id, expiresAt: approval.expires_at };
@@ -520,6 +533,15 @@ async function consumeApproval(payload) {
       : String(payload.token || "USDC").toUpperCase(),
   };
 
+  // Bridge leg binding: a bridge may only run when the approval covered it,
+  // and then the destination must match exactly.
+  const approvalBridgeTo = approval.bridge_to || null;
+  const expectedBridgeTo = payload.bridgeTo && payload.bridgeTo !== DEFAULT_DESTINATION_CHAIN ? String(payload.bridgeTo).trim() : null;
+  const expectedBridgeAddress = expectedBridgeTo ? normalizeAccountAddress(expectedBridgeTo, payload.bridgeAddress) : null;
+  const bridgeMatches = approvalBridgeTo
+    ? expectedBridgeTo === approvalBridgeTo && expectedBridgeAddress === (approval.bridge_address || null)
+    : !expectedBridgeTo;
+
   const matches =
     approval.user_key === expected.userKey &&
     approval.wallet_address === expected.walletAddress &&
@@ -527,7 +549,8 @@ async function consumeApproval(payload) {
     approval.destination_address === expected.destinationAddress &&
     (approval.destination_chain || DEFAULT_DESTINATION_CHAIN) === expected.destinationChain &&
     approval.amount === expected.amount &&
-    approval.token === expected.token;
+    approval.token === expected.token &&
+    bridgeMatches;
 
   if (!matches) throw Object.assign(new Error("Cavo PIN approval does not match this transaction"), { status: 401 });
 

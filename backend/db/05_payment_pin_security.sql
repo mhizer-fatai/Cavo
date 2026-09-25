@@ -32,7 +32,9 @@ CREATE TABLE public.cavo_pin_approvals (
   token TEXT NOT NULL DEFAULT 'USDC',
   expires_at TIMESTAMPTZ NOT NULL,
   used_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  bridge_to TEXT,
+  bridge_address TEXT
 );
 
 CREATE TABLE public.cavo_security_events (

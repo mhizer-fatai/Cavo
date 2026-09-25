@@ -90,6 +90,8 @@ const schemas = {
     walletId: uuid,
     destinationAddress: anyAddress,
     destinationChain: chainName.optional(),
+    bridgeTo: chainName.optional(),
+    bridgeAddress: anyAddress.optional(),
     amount: looseAmount,
     token,
     tokenOut: token.optional(),
