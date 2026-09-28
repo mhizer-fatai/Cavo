@@ -2200,6 +2200,8 @@ export default function DashboardPage() {
           securityAnswerTwo={securityAnswerTwo}
           hasCavoPin={hasCavoPin}
           walletAddress={cavoWalletAddress}
+          usdcBalance={usdcDisplay}
+          eurcBalance={eurcDisplay}
           onAmountChange={setSwapAmount}
           onTokenInChange={(token) => {
             setSwapTokenIn(token)
