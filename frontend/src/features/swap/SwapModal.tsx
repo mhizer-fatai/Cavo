@@ -36,9 +36,9 @@ type SwapModalProps = {
   shortenAddress: (address: string) => string
 }
 
-const TOKEN_META: Record<SwapToken, { symbol: string; color: string }> = {
-  USDC: { symbol: '$', color: '#2563eb' },
-  EURC: { symbol: '€', color: '#059669' },
+const TOKEN_META: Record<SwapToken, { logo: string }> = {
+  USDC: { logo: '/usdc-logo.png' },
+  EURC: { logo: '/eurc-logo.png' },
 }
 
 function TokenSelector({
@@ -71,23 +71,11 @@ function TokenSelector({
         opacity: disabled ? 0.6 : 1,
       }}
     >
-      <span
-        style={{
-          width: 24,
-          height: 24,
-          borderRadius: '50%',
-          background: meta.color,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: '#fff',
-          fontSize: 13,
-          fontWeight: 700,
-          flexShrink: 0,
-        }}
-      >
-        {meta.symbol}
-      </span>
+      <img
+        src={meta.logo}
+        alt={token}
+        style={{ width: 24, height: 24, borderRadius: '50%', flexShrink: 0 }}
+      />
       {token}
       <ChevronDown size={14} color="#9ca0b5" />
     </button>
@@ -315,7 +303,7 @@ export default function SwapModal({
               onClick={onReview}
               disabled={!canReview || quoteLoading || !swapQuote}
               style={{
-                background: canReview && !quoteLoading && swapQuote ? '#3b82f6' : '#2d3152',
+                background: canReview && !quoteLoading && swapQuote ? '#0E6B4E' : '#2d3152',
                 color: '#fff',
                 border: 'none',
                 borderRadius: 10,
@@ -354,7 +342,7 @@ export default function SwapModal({
 
             {swapStep === 'processing' ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'center', padding: '20px 0' }}>
-                <div style={{ width: 32, height: 32, border: '3px solid #3d4166', borderTopColor: '#3b82f6', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                <div style={{ width: 32, height: 32, border: '3px solid #3d4166', borderTopColor: '#0E6B4E', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
                 <div>
                   <strong style={{ color: '#fff', display: 'block' }}>Swap submitted</strong>
                   <span style={{ color: '#9ca0b5', fontSize: 13 }}>Waiting for network confirmation...</span>
@@ -406,7 +394,7 @@ export default function SwapModal({
                   onClick={onSubmitPin}
                   disabled={isSwapping || !canSubmitPin}
                   style={{
-                    background: !isSwapping && canSubmitPin ? '#3b82f6' : '#2d3152',
+                    background: !isSwapping && canSubmitPin ? '#0E6B4E' : '#2d3152',
                     color: '#fff',
                     border: 'none',
                     borderRadius: 10,
