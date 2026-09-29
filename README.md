@@ -1,6 +1,6 @@
-# Cavo — Stablecoin Neobank on Arc
+# Cavo — Stablecoin Payments on Arc
 
-Cavo is a stablecoin-native payment account on **Arc** that lets users, creators, freelancers, and small businesses send, receive, swap, earn, and withdraw USDC and EURC through usernames, payment links, and QR codes — with Web2-style onboarding (Google / email OTP, no seed phrases).
+Cavo is a stablecoin payments app on **Arc** for sending, receiving, swapping, earning, and withdrawing USDC and EURC — through usernames, payment links, and QR codes, with Web2-style onboarding (Google / email OTP, no seed phrases). Built for creators, freelancers, and small businesses.
 
 > **Live demo:** <https://your-frontend-url> *(fill in after deploy)*
 > **Mainnet contract:** `0x…` *(fill in after deploy, verify on [explorer.arc.io](https://explorer.arc.io))*
