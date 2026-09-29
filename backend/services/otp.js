@@ -184,6 +184,10 @@ async function requestEmailCode(rawEmail) {
     }
   }
 
+  // One active code at a time: requesting a new code kills the old ones,
+  // so concurrent codes can't multiply the guessing budget.
+  await invalidateOldCodes(email);
+
   const code = generateCode();
   const expiresAt = new Date(Date.now() + OTP_EXPIRES_MINUTES * 60 * 1000).toISOString();
   const record = {
