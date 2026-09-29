@@ -79,6 +79,33 @@ async function executeContractCall(walletId, contractAddress, abiFunctionSignatu
 }
 
 /**
+ * Sign and send a pre-built raw contract call (e.g. aggregator router
+ * calldata from Tower's build-tx) from a user's Circle wallet.
+ */
+async function executeRawCalldata(walletId, contractAddress, callData) {
+  const client = getCircleClient();
+  if (!client) throw new Error('Circle client not initialized');
+  if (!/^0x[a-fA-F0-9]{40}$/.test(String(contractAddress || ''))) {
+    throw new Error('Valid contract address is required for raw execution');
+  }
+  if (!/^0x([0-9a-fA-F]{2})+$/.test(String(callData || ''))) {
+    throw new Error('Valid call data is required for raw execution');
+  }
+
+  const res = await client.createContractExecutionTransaction({
+    walletId,
+    contractAddress,
+    callData,
+    fee: {
+      type: 'level',
+      config: { feeLevel: 'MEDIUM' },
+    },
+  });
+
+  return res.data;
+}
+
+/**
  * Transfer tokens from a Circle wallet to an address.
  */
 async function transferTokens(walletId, destinationAddress, token, amount) {
@@ -185,6 +212,7 @@ module.exports = {
   getCircleClient,
   createWalletForUser,
   executeContractCall,
+  executeRawCalldata,
   transferTokens,
   getWalletTokenId,
   getWalletBalance,

@@ -60,8 +60,8 @@ async function getSwapQuote({ tokenIn, tokenOut, amountIn, walletAddress }) {
   return provider === "tower" ? towerService.getQuote(quoteArgs) : circleSwapService.getQuote(quoteArgs);
 }
 
-async function executeSwap({ provider, walletAddress, tokenIn, tokenOut, amountIn, minOut }) {
-  const args = { walletAddress, tokenIn, tokenOut, amountIn, minOut };
+async function executeSwap({ provider, walletAddress, walletId, tokenIn, tokenOut, amountIn, minOut }) {
+  const args = { walletAddress, walletId, tokenIn, tokenOut, amountIn, minOut };
   return provider === "tower" ? towerService.executeSwap(args) : circleSwapService.executeSwap(args);
 }
 

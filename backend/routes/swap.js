@@ -79,7 +79,7 @@ router.post("/execute", requireCavoSession, requireMatchingUserKey, validateBody
       created_at: new Date().toISOString(),
     });
 
-    const result = await swapService.executeSwap({ provider, walletAddress, tokenIn, tokenOut, amountIn, minOut });
+    const result = await swapService.executeSwap({ provider, walletAddress, walletId, tokenIn, tokenOut, amountIn, minOut });
 
     await swapService.updateSwapRecord(swapId, {
       status: result.txHash ? "completed" : "pending",

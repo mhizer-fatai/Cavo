@@ -103,14 +103,57 @@ async function buildUnsignedSwapTransaction({ tokenIn, tokenOut, amountIn, userA
     body: { quote, userAddress },
   });
 
-  return { approval: data.approval, swap: data.swap };
+  return {
+    approval: data.approval || null,
+    swap: data.swap || null,
+    minOut: quote.minOutRaw ? fromAtomic(quote.minOutRaw, tokenOut) : null,
+    expectedOut: data.swap?.expectedUserOutput
+      ? fromAtomic(String(data.swap.expectedUserOutput), tokenOut)
+      : null,
+  };
 }
 
-async function executeSwap() {
-  throw Object.assign(
-    new Error("Tower swap execution is disabled until the Arc mainnet migration. Use the Circle provider."),
-    { status: 501 },
-  );
+async function executeSwap({ walletId, walletAddress, tokenIn, tokenOut, amountIn, minOut }) {
+  const { executeRawCalldata, waitForTransactionHash } = require("./wallets");
+  if (!walletId) {
+    throw Object.assign(new Error("Wallet ID is required for Tower swap execution"), { status: 400 });
+  }
+  // Fresh quote + unsigned txs (Tower re-quotes inside build-tx).
+  const built = await buildUnsignedSwapTransaction({
+    tokenIn,
+    tokenOut,
+    amountIn,
+    userAddress: walletAddress,
+  });
+  if (!built.swap?.to || !built.swap?.data) {
+    throw Object.assign(new Error("Tower did not return a swap transaction"), { status: 502 });
+  }
+  // Server-side slippage floor: abort if the fresh market moved beyond the
+  // user's quoted tolerance (Tower enforces its own bound on-chain).
+  const towerMinOut = built.minOut !== null ? Number(built.minOut) : NaN;
+  const clientFloor = minOut !== undefined && minOut !== null && minOut !== "" ? Number(minOut) : NaN;
+  if (Number.isFinite(clientFloor) && clientFloor > 0) {
+    if (!Number.isFinite(towerMinOut) || towerMinOut < clientFloor) {
+      throw Object.assign(new Error("Market moved beyond your quoted tolerance. Request a fresh quote."), { status: 409 });
+    }
+  }
+  // 1. Approval leg (Tower returns it when the executor needs allowance).
+  if (built.approval?.to && built.approval?.data) {
+    const approvalTx = await executeRawCalldata(walletId, built.approval.to, built.approval.data);
+    const approvalHash = await waitForTransactionHash(approvalTx);
+    if (!approvalHash) {
+      throw Object.assign(new Error("Swap approval was submitted but no transaction hash was returned. Check the explorer before retrying."), { status: 502 });
+    }
+  }
+  // 2. Swap leg.
+  const swapTx = await executeRawCalldata(walletId, built.swap.to, built.swap.data);
+  const txHash = await waitForTransactionHash(swapTx);
+  return {
+    txHash: txHash || null,
+    amountOut: built.expectedOut,
+    enforcedMinOut: Number.isFinite(towerMinOut) ? String(towerMinOut) : null,
+    status: txHash ? "submitted" : "pending",
+  };
 }
 
 module.exports = { getQuote, buildUnsignedSwapTransaction, executeSwap };
