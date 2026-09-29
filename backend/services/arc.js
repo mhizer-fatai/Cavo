@@ -1,13 +1,16 @@
 const { AppKit } = require("@circle-fin/app-kit");
 const { createCircleWalletsAdapter } = require("@circle-fin/adapter-circle-wallets");
+const { SDK_CHAIN, EXPLORER_TX } = require("./chain");
 
+// Internal home-chain label (stable across networks; stored in the DB and
+// matched in approvals). Only the SDK-facing name/endpoints switch networks.
 const SOURCE_CHAIN = "Arc_Testnet";
 
 const SUPPORTED_DESTINATION_CHAINS = Object.freeze({
   Arc_Testnet: {
     value: "Arc_Testnet",
     label: "Arc Testnet",
-    explorer: "https://testnet.arcscan.app/tx/",
+    explorer: EXPLORER_TX,
   },
   Ethereum_Sepolia: {
     value: "Ethereum_Sepolia",
@@ -136,7 +139,7 @@ async function bridgeUsdcFromArc({ fromAddress, toAddress, destinationChain, amo
   const result = await appKit.bridge({
     from: {
       adapter: circleAdapter,
-      chain: SOURCE_CHAIN,
+      chain: SDK_CHAIN,
       address: fromAddress,
     },
     to: {
@@ -157,6 +160,7 @@ async function bridgeUsdcFromArc({ fromAddress, toAddress, destinationChain, amo
 
 module.exports = {
   SOURCE_CHAIN,
+  SDK_CHAIN,
   SUPPORTED_DESTINATION_CHAINS,
   bridgeUsdcFromArc,
   getCircleWalletsKit,

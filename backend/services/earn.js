@@ -36,12 +36,8 @@ const VAULTS = {
 const TOKEN_DECIMALS = 6;
 const MAX_EARN_PER_TX = Number(process.env.EARN_MAX_PER_TX || 100);
 
-const ARC_RPC_URLS = [
-  process.env.ARC_RPC_URL,
-  "https://rpc.testnet.arc.network",
-  "https://rpc.quicknode.testnet.arc.network",
-  "https://arc-testnet.drpc.org",
-].filter(Boolean);
+const { RPC_URL, RPC_FALLBACKS } = require("./chain");
+const ARC_RPC_URLS = [RPC_URL, ...RPC_FALLBACKS];
 
 let supabase = null;
 const memoryPositions = new Map(); // `${userKey}|${token}` -> position

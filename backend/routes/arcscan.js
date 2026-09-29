@@ -2,16 +2,11 @@ const express = require("express");
 const { schemas, validateQuery } = require("../middleware/validate");
 
 const router = express.Router();
-const ARCSCAN_API_BASE = "https://testnet.arcscan.app/api";
+const { ARCSCAN_API_BASE, RPC_URL, RPC_FALLBACKS } = require("../services/chain");
 
-// Public Arc Testnet JSON-RPC endpoints (chain ID 5042002). Used as a fallback
-// when the Arcscan API is rate-limited (HTTP 429) so balances keep working.
-const ARC_RPC_URLS = [
-  process.env.ARC_RPC_URL,
-  "https://rpc.testnet.arc.network",
-  "https://rpc.quicknode.testnet.arc.network",
-  "https://arc-testnet.drpc.org",
-].filter(Boolean);
+// Public Arc JSON-RPC endpoints. Used as a fallback when the Arcscan API is
+// rate-limited (HTTP 429) so balances keep working.
+const ARC_RPC_URLS = [RPC_URL, ...RPC_FALLBACKS];
 
 async function rpcRequest(method, params, timeoutMs = 8000) {
   let lastError;

@@ -1,5 +1,5 @@
 const {
-  SOURCE_CHAIN,
+  SDK_CHAIN,
   getCircleWalletsKit,
   findResultTransactionHash,
   toJsonSafe,
@@ -54,7 +54,7 @@ async function getQuote({ tokenIn, tokenOut, amountIn, walletAddress }) {
   }
   const { adapter, kit } = getCircleWalletsKit();
   const estimate = await kit.estimateSwap({
-    from: { adapter, chain: SOURCE_CHAIN, address: walletAddress },
+    from: { adapter, chain: SDK_CHAIN, address: walletAddress },
     tokenIn,
     tokenOut,
     amountIn,
@@ -68,7 +68,7 @@ async function executeSwap({ walletAddress, tokenIn, tokenOut, amountIn, minOut 
   // Fresh quote at execution time: abort unless the market still satisfies
   // the stricter of the user's quoted tolerance and the server safety floor.
   const fresh = await kit.estimateSwap({
-    from: { adapter, chain: SOURCE_CHAIN, address: walletAddress },
+    from: { adapter, chain: SDK_CHAIN, address: walletAddress },
     tokenIn,
     tokenOut,
     amountIn,
@@ -82,7 +82,7 @@ async function executeSwap({ walletAddress, tokenIn, tokenOut, amountIn, minOut 
   const clientFloor = minOut !== undefined && minOut !== null && minOut !== "" ? Number(minOut) : NaN;
   const effective = formatTokenAmount(Number.isFinite(clientFloor) && clientFloor > 0 ? Math.max(clientFloor, floor) : floor);
   const result = await kit.swap({
-    from: { adapter, chain: SOURCE_CHAIN, address: walletAddress },
+    from: { adapter, chain: SDK_CHAIN, address: walletAddress },
     tokenIn,
     tokenOut,
     amountIn,

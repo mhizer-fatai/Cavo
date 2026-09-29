@@ -2,6 +2,7 @@ const express = require("express");
 const { supabase, memStore } = require("../supabase");
 const { v4: uuidv4 } = require("uuid");
 const { isValidAddressForChain, normalizeAccountAddress } = require("../services/arc");
+const { RPC_URL } = require("../services/chain");
 const { requireCavoSession, ownsWalletAddress } = require("../services/sessions");
 const { recordAuditEvent, getClientIp } = require("../services/audit");
 const { schemas, validateBody } = require("../middleware/validate");
@@ -9,7 +10,7 @@ const { schemas, validateBody } = require("../middleware/validate");
 const router = express.Router();
 
 const CHAIN_RPC = {
-  Arc_Testnet: "https://rpc.testnet.arc.network",
+  Arc_Testnet: RPC_URL,
   Ethereum_Sepolia: "https://ethereum-sepolia-rpc.publicnode.com",
   Base_Sepolia: "https://base-sepolia-rpc.publicnode.com",
   Arbitrum_Sepolia: "https://arbitrum-sepolia-rpc.publicnode.com",

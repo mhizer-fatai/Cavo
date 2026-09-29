@@ -18,6 +18,7 @@ import {
 import Navbar from '../components/Navbar'
 import WalletButton from '../components/WalletButton'
 import { useCavoAuth } from '../context/AuthContext'
+import { ARC_EXPLORER_URL } from '../lib/config'
 
 function Reveal({ children, delay = 0, className = '' }: { children: ReactNode; delay?: number; className?: string }) {
   const ref = useRef<HTMLDivElement | null>(null)
@@ -274,7 +275,7 @@ export default function HomePage() {
           <div className="footer-right">
             Built on <a href="https://arc.network" target="_blank" rel="noopener noreferrer">Arc Network</a>
             {' - '}
-            <a href="https://testnet.arcscan.app" target="_blank" rel="noopener noreferrer">Explorer</a>
+            <a href={ARC_EXPLORER_URL} target="_blank" rel="noopener noreferrer">Explorer</a>
           </div>
         </div>
       </footer>

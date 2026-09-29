@@ -1,38 +1,50 @@
 import { defineChain } from 'viem'
 import { arbitrumSepolia, baseSepolia, optimismSepolia, polygonAmoy, sepolia } from 'viem/chains'
 
-// ─── Arc Testnet ──────────────────────────────────────────────────────────────
+// ─── Arc network (single switch: VITE_ARC_NETWORK=testnet|mainnet) ───────────
+// The internal home-chain label stays 'Arc_Testnet' everywhere (DB values,
+// approval matching); only endpoints, chain ID, and token addresses switch.
+const ARC_NETWORK = (import.meta.env.VITE_ARC_NETWORK || 'testnet').toLowerCase()
+export const IS_MAINNET = ARC_NETWORK === 'mainnet'
+const ARC_CHAIN_ID = Number(import.meta.env.VITE_ARC_CHAIN_ID || (IS_MAINNET ? 5042 : 5042002))
+export const ARC_RPC_URL = import.meta.env.VITE_ARC_RPC_URL || (IS_MAINNET ? 'https://rpc.arc-scan.org' : 'https://rpc.testnet.arc.network')
+export const ARC_EXPLORER_URL = (import.meta.env.VITE_ARC_EXPLORER_URL || (IS_MAINNET ? 'https://explorer.arc.io' : 'https://testnet.arcscan.app')).replace(/\/$/, '')
+const ARC_CHAIN_LABEL = IS_MAINNET ? 'Arc' : 'Arc Testnet'
+export const ARC_USDC_ADDRESS = (import.meta.env.VITE_ARC_USDC_ADDRESS || '0x3600000000000000000000000000000000000000') as `0x${string}`
+export const ARC_EURC_ADDRESS = (import.meta.env.VITE_ARC_EURC_ADDRESS || (IS_MAINNET ? '0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1' : '0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a')) as `0x${string}`
+
+// ─── Arc chain ────────────────────────────────────────────────────────────────
 export const arcTestnet = defineChain({
-  id: 5042002,
-  name: 'Arc Testnet',
+  id: ARC_CHAIN_ID,
+  name: ARC_CHAIN_LABEL,
   nativeCurrency: {
     name: 'USD Coin',
     symbol: 'USDC',
     decimals: 18,
   },
   rpcUrls: {
-    default: { http: ['https://rpc.testnet.arc.network'] },
+    default: { http: [ARC_RPC_URL] },
   },
   blockExplorers: {
     default: {
       name: 'Arc Explorer',
-      url: 'https://testnet.arcscan.app',
+      url: ARC_EXPLORER_URL,
     },
   },
-  testnet: true,
+  testnet: !IS_MAINNET,
 })
 
 // ─── Token Addresses ──────────────────────────────────────────────────────────
 export const TOKENS = {
   USDC: {
-    address: '0x3600000000000000000000000000000000000000' as `0x${string}`,
+    address: ARC_USDC_ADDRESS,
     symbol: 'USDC',
     decimals: 6,
     name: 'USD Coin',
     color: '#2563eb',
   },
   EURC: {
-    address: '0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a' as `0x${string}`,
+    address: ARC_EURC_ADDRESS,
     symbol: 'EURC',
     decimals: 6,
     name: 'Euro Coin',
@@ -62,9 +74,9 @@ export const CAVO_SECURITY_QUESTIONS = [
 export const PAYMENT_SOURCE_CHAINS = [
   {
     value: 'Arc_Testnet',
-    label: 'Arc Testnet',
+    label: ARC_CHAIN_LABEL,
     wagmiChain: arcTestnet,
-    explorer: 'https://testnet.arcscan.app/tx/',
+    explorer: `${ARC_EXPLORER_URL}/tx/`,
   },
   {
     value: 'Ethereum_Sepolia',
@@ -107,7 +119,7 @@ export function getPaymentSourceChain(value: string) {
 // Withdraw destinations: any EOA reachable via Circle CCTP (EVM + Solana).
 // Kept separate from the wagmi-bound list above because Solana has no viem chain.
 export const CCTP_WITHDRAW_CHAINS = [
-  { value: 'Arc_Testnet', label: 'Arc Testnet', explorer: 'https://testnet.arcscan.app/tx/', addressKind: 'evm' },
+  { value: 'Arc_Testnet', label: ARC_CHAIN_LABEL, explorer: `${ARC_EXPLORER_URL}/tx/`, addressKind: 'evm' },
   { value: 'Ethereum_Sepolia', label: 'Ethereum Sepolia', explorer: 'https://sepolia.etherscan.io/tx/', addressKind: 'evm' },
   { value: 'Base_Sepolia', label: 'Base Sepolia', explorer: 'https://sepolia.basescan.org/tx/', addressKind: 'evm' },
   { value: 'Arbitrum_Sepolia', label: 'Arbitrum Sepolia', explorer: 'https://sepolia.arbiscan.io/tx/', addressKind: 'evm' },

@@ -101,8 +101,11 @@ Or run the combined script `backend/scripts/cavo_database.sql` (same SQL, same o
 | `GOOGLE_CLIENT_ID` | Google OAuth client (server-side verification) |
 | `CIRCLE_API_KEY`, `CIRCLE_ENTITY_SECRET` | Circle dev wallets + signing |
 | `CIRCLE_KIT_KEY` | Circle App-Kit key (`KIT_KEY:<id>:<secret>`) for swaps |
-| `ARC_RPC_URL` | Arc RPC endpoint (default: testnet) |
-| `ARC_USDC_ADDRESS`, `ARC_EURC_ADDRESS` | Token contracts (testnet defaults baked in) |
+| `ARC_NETWORK` | `testnet` (default) or `mainnet` — flips chain ID, SDK chain name, RPC, explorer, and token defaults |
+| `ARC_RPC_URL` | Primary Arc RPC endpoint (per-network default) |
+| `ARC_EXPLORER_URL` | Block explorer base (per-network default) |
+| `ARCSCAN_API_BASE` | Arcscan-compatible API base for the balance proxy |
+| `ARC_USDC_ADDRESS`, `ARC_EURC_ADDRESS` | Token contracts (per-network defaults; mainnet EURC verified on explorer) |
 | `EARN_ALVUSDC_VAULT`, `EARN_ALVEURC_VAULT`, `EARN_MAX_PER_TX` | Earn vaults + per-tx cap |
 | `SWAP_PROVIDER` | `circle` (default) or `tower` |
 | `SWAP_SLIPPAGE_BPS`, `TOWER_API_BASE`, `TOWER_API_KEY`, `TOWER_SLIPPAGE_BPS` | Swap config |
@@ -116,6 +119,9 @@ Or run the combined script `backend/scripts/cavo_database.sql` (same SQL, same o
 | -------- | ------- |
 | `VITE_BACKEND_URL` | Backend base (`/api` for the Vite proxy, full URL in production) |
 | `VITE_CAVO_CONTRACT_ADDRESS` | Deployed `Cavo` router (falls back to the testnet address) |
+| `VITE_ARC_NETWORK` | `testnet` (default) or `mainnet` |
+| `VITE_ARC_CHAIN_ID`, `VITE_ARC_RPC_URL`, `VITE_ARC_EXPLORER_URL` | Chain overrides (sensible per-network defaults) |
+| `VITE_ARC_USDC_ADDRESS`, `VITE_ARC_EURC_ADDRESS` | Token overrides (verified mainnet EURC default on mainnet) |
 | `VITE_WALLETCONNECT_PROJECT_ID` | WalletConnect (optional) |
 | `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` | Public Supabase values (anon key is public by design) |
 | `VITE_CIRCLE_APP_ID` | Circle app ID (public) |
