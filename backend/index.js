@@ -202,7 +202,7 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: "Internal server error" });
 });
 
-if (!isProduction) {
+if (isDevelopment) {
   console.warn(
     "Running in DEVELOPMENT mode (NODE_ENV !== 'production'): relaxed rate limits, " +
     "non-Secure cookies, verbose errors. Do NOT use for mainnet traffic."
