@@ -72,6 +72,7 @@ async function executeSwap({ walletAddress, tokenIn, tokenOut, amountIn, minOut 
     tokenIn,
     tokenOut,
     amountIn,
+    config: getKitConfig(),
   });
   const freshOut = Number(fresh?.estimatedOutput?.amount);
   if (!Number.isFinite(freshOut) || freshOut <= 0) {

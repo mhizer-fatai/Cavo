@@ -1,0 +1,3 @@
+{
+  "ignore": [".transfer-scan-cache.json", "*.log"]
+}
