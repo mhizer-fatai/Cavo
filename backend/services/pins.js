@@ -405,7 +405,7 @@ async function createApproval(payload) {
     // Earn approvals may only target known vault contracts, never arbitrary addresses.
     let isVault = false;
     try {
-      isVault = require("./earn").isKnownVaultAddress(destinationAddress);
+      isVault = await require("./earn").isKnownVaultAddress(destinationAddress);
     } catch {
       isVault = false;
     }

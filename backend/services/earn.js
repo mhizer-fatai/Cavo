@@ -14,6 +14,34 @@ const { bridgeUsdcFromArc, SOURCE_CHAIN } = require("./arc");
 const USDC_ADDRESS = process.env.ARC_USDC_ADDRESS || "0x3600000000000000000000000000000000000000";
 const EURC_ADDRESS = process.env.ARC_EURC_ADDRESS || "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a";
 
+const {
+  IS_MAINNET,
+  SDK_CHAIN,
+  USDC_ADDRESS: CHAIN_USDC_ADDRESS,
+  EURC_ADDRESS: CHAIN_EURC_ADDRESS,
+} = require("./chain");
+
+// Lazy Earn-Kit loading (keeps testnet boot fast; only mainnet paths use it).
+let EK = null;
+let earnKitInstance = null;
+let earnContextSingleton = null;
+function earnKit() {
+  if (!EK) EK = require("@circle-fin/earn-kit");
+  if (!earnKitInstance) earnKitInstance = new EK.EarnKit();
+  return earnKitInstance;
+}
+function earnContext() {
+  if (!EK) EK = require("@circle-fin/earn-kit");
+  if (!earnContextSingleton) {
+    const { EarnServiceProvider } = require("@circle-fin/provider-earn-service");
+    earnContextSingleton = EK.createEarnKitContext({ providers: [new EarnServiceProvider()] });
+  }
+  return earnContextSingleton;
+}
+function earnAdapter() {
+  return require("./arc").getCircleWalletsKit().adapter;
+}
+
 const VAULTS = {
   USDC: {
     token: "USDC",
@@ -80,16 +108,27 @@ async function withDbFallback(memoryFn, dbFn) {
   }
 }
 
-function getVault(token) {
+async function getVault(token) {
   const normalized = String(token || "").toUpperCase().trim();
-  const vault = VAULTS[normalized];
-  if (!vault) throw Object.assign(new Error("Earn is available for USDC and EURC"), { status: 400 });
-  return vault;
+  if (!VAULTS[normalized]) throw Object.assign(new Error("Earn is available for USDC and EURC"), { status: 400 });
+  if (IS_MAINNET) return resolveMainnetVault(normalized);
+  return VAULTS[normalized];
 }
 
-function isKnownVaultAddress(address) {
+async function isKnownVaultAddress(address) {
   const normalized = String(address || "").toLowerCase();
-  return Object.values(VAULTS).some(entry => entry.vault.toLowerCase() === normalized);
+  if (!IS_MAINNET) {
+    return Object.values(VAULTS).some(entry => entry.vault.toLowerCase() === normalized);
+  }
+  for (const token of ["USDC", "EURC"]) {
+    try {
+      const entry = await resolveMainnetVault(token);
+      if (entry.vault === normalized) return true;
+    } catch {
+      // ignore and try the next token
+    }
+  }
+  return false;
 }
 
 function normalizeAmount(value) {
@@ -179,6 +218,7 @@ const SEL_MAX_REDEEM = "0xd905777e";
  */
 
 async function getVaultState(vaultAddress) {
+  if (IS_MAINNET) return getMainnetVaultState(vaultAddress);
   const [assetsHex, supplyHex] = await Promise.all([
     ethCall(vaultAddress, SEL_TOTAL_ASSETS),
     ethCall(vaultAddress, SEL_TOTAL_SUPPLY),
@@ -261,6 +301,7 @@ function apyFromSnapshots(snapshots) {
 }
 
 async function getVaults(walletAddress) {
+  if (IS_MAINNET) return getMainnetVaults();
   // One vault's RPC blip must never take down the other: fetch independently
   // and fall back to the last-known-good snapshot when everything fails.
   const settled = await Promise.all(
@@ -419,7 +460,8 @@ async function recordEvent(event) {
 }
 
 async function deposit({ walletId, walletAddress, token, amount }) {
-  const entry = getVault(token);
+  if (IS_MAINNET) return depositMainnet({ walletAddress, token, amount });
+  const entry = await getVault(token);
   const amountNumber = normalizeAmount(amount);
   const amountAtomic = toAtomic(amountNumber);
   const expectedShares = await previewDeposit(entry.vault, amountAtomic);
@@ -446,7 +488,8 @@ async function deposit({ walletId, walletAddress, token, amount }) {
 }
 
 async function withdraw({ walletId, walletAddress, token, shares, destinationChain, destinationAddress }) {
-  const entry = getVault(token);
+  if (IS_MAINNET) return withdrawMainnet({ walletAddress, token, shares });
+  const entry = await getVault(token);
   const sharesNumber = Number(String(shares || "").trim());
   if (!Number.isFinite(sharesNumber) || sharesNumber <= 0) {
     throw Object.assign(new Error("A valid share amount is required"), { status: 400 });
@@ -500,6 +543,154 @@ async function withdraw({ walletId, walletAddress, token, shares, destinationCha
     destinationChain: bridgeTo || "Arc_Testnet",
     destinationAddress: bridgeTo ? bridgeRecipient : walletAddress.toLowerCase(),
     assets: expectedAssets,
+    shares: sharesNumber,
+  };
+}
+
+// ─── Mainnet path (Circle Earn Kit) ─────────────────────────────────────────
+// Testnet keeps the ArcLend direct-execution path above; mainnet discovers
+// Morpho vaults through Circle's Earn API and executes through the Kit.
+// Route and persistence interfaces are unchanged.
+
+const MAINNET_VAULT_CACHE = new Map(); // token -> { entry, fetchedAt }
+const MAINNET_VAULT_TTL_MS = 3600_000;
+
+function toMainnetVaultEntry(token, v) {
+  const totalAssets = Number(v.totalDeposits || 0);
+  const totalSupply = Number(v.liquidityProfile?.totalSupply || 0);
+  const sharePrice = totalSupply > 0 ? totalAssets / totalSupply : 1;
+  return {
+    id: v.name || `${token} Vault`,
+    token,
+    asset: token === "USDC" ? CHAIN_USDC_ADDRESS : CHAIN_EURC_ADDRESS,
+    vault: String(v.vaultAddress || v.address || "").toLowerCase(),
+    provider: v.manager?.name ? `${v.manager.name} via Earn Kit` : `${v.protocol || "Morpho"} via Earn Kit`,
+    experimental: false,
+    totalAssets,
+    totalSupply,
+    sharePrice,
+    apy: v.currentApy != null ? Number(v.currentApy) : null,
+    apyPeriodDays: null,
+    stale: false,
+  };
+}
+
+async function resolveMainnetVault(token) {
+  const normalized = String(token || "").toUpperCase().trim();
+  if (!["USDC", "EURC"].includes(normalized)) {
+    throw Object.assign(new Error("Earn is available for USDC and EURC"), { status: 400 });
+  }
+  const cached = MAINNET_VAULT_CACHE.get(normalized);
+  if (cached && Date.now() - cached.fetchedAt < MAINNET_VAULT_TTL_MS) return cached.entry;
+  if (!EK) EK = require("@circle-fin/earn-kit");
+  const result = await EK.exploreVaults(earnContext(), {
+    chain: "Arc",
+    asset: normalized,
+    sortBy: "apy",
+    pageSize: 100,
+  });
+  const candidates = (result.vaults || []).filter(
+    (v) => v.status === "active" && Number(v.liquidity) > 1000
+  );
+  candidates.sort(
+    (a, b) =>
+      Number(!!b.circleGuarded) - Number(!!a.circleGuarded) ||
+      Number(b.currentApy || 0) - Number(a.currentApy || 0)
+  );
+  if (!candidates.length) {
+    throw Object.assign(new Error(`No ${normalized} earn vault available on Arc right now`), { status: 502 });
+  }
+  const entry = toMainnetVaultEntry(normalized, candidates[0]);
+  MAINNET_VAULT_CACHE.set(normalized, { entry, fetchedAt: Date.now() });
+  return entry;
+}
+
+async function getMainnetVaultState(vaultAddress) {
+  const normalized = String(vaultAddress || "").toLowerCase();
+  for (const token of ["USDC", "EURC"]) {
+    try {
+      const entry = await resolveMainnetVault(token);
+      if (entry.vault === normalized) {
+        return {
+          totalAssets: entry.totalAssets,
+          totalSupply: entry.totalSupply,
+          sharePrice: entry.sharePrice,
+        };
+      }
+    } catch {
+      // ignore and try the next token
+    }
+  }
+  throw Object.assign(new Error("Unknown earn vault"), { status: 400 });
+}
+
+async function getMainnetVaults() {
+  const out = [];
+  for (const token of ["USDC", "EURC"]) {
+    try {
+      const entry = await resolveMainnetVault(token);
+      let snapshots = [];
+      try {
+        snapshots = await recordSnapshot(entry.vault, {
+          sharePrice: entry.sharePrice,
+          totalAssets: entry.totalAssets,
+          totalSupply: entry.totalSupply,
+        });
+      } catch (err) {
+        console.warn("Earn snapshot failed:", err.message || err);
+      }
+      const { apy, periodDays } = apyFromSnapshots(snapshots);
+      out.push({
+        ...entry,
+        apy: apy ?? entry.apy,
+        apyPeriodDays: periodDays,
+      });
+    } catch (err) {
+      console.warn(`Earn ${token} mainnet vault unavailable:`, err.message || err);
+    }
+  }
+  if (!out.length) {
+    throw Object.assign(new Error("Earn vaults are unreachable right now. Try again in a moment."), { status: 502 });
+  }
+  return out;
+}
+
+async function depositMainnet({ walletAddress, token, amount }) {
+  const entry = await resolveMainnetVault(token);
+  const amountNumber = normalizeAmount(amount);
+  const result = await earnKit().deposit({
+    from: { adapter: earnAdapter(), chain: SDK_CHAIN },
+    vaultAddress: entry.vault,
+    amount: String(amountNumber),
+  });
+  const { findResultTransactionHash, toJsonSafe } = require("./arc");
+  const txHash = result.txHash || findResultTransactionHash(toJsonSafe(result)) || null;
+  const shares = entry.sharePrice > 0 ? amountNumber / entry.sharePrice : amountNumber;
+  return { approveHash: null, depositHash: txHash, shares, amount: amountNumber };
+}
+
+async function withdrawMainnet({ walletAddress, token, shares }) {
+  const entry = await resolveMainnetVault(token);
+  const sharesNumber = Number(String(shares || "").trim());
+  if (!Number.isFinite(sharesNumber) || sharesNumber <= 0) {
+    throw Object.assign(new Error("A valid share amount is required"), { status: 400 });
+  }
+  const expectedAssets = sharesNumber * (entry.sharePrice > 0 ? entry.sharePrice : 1);
+  const result = await earnKit().withdraw({
+    from: { adapter: earnAdapter(), chain: SDK_CHAIN },
+    vaultAddress: entry.vault,
+    amount: String(expectedAssets),
+  });
+  const { findResultTransactionHash, toJsonSafe } = require("./arc");
+  const txHash = result.txHash || findResultTransactionHash(toJsonSafe(result)) || null;
+  const assets = Number(result.amount) || expectedAssets;
+  return {
+    redeemHash: txHash,
+    bridgeHash: null,
+    bridgeState: null,
+    destinationChain: "Arc_Testnet",
+    destinationAddress: walletAddress.toLowerCase(),
+    assets,
     shares: sharesNumber,
   };
 }

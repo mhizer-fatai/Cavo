@@ -85,7 +85,7 @@ router.post("/deposit", requireCavoSession, requireMatchingUserKey, validateBody
     if (!walletAddress || !walletId || !token || !amount || !approvalId) {
       return res.status(400).json({ error: "walletAddress, walletId, token, amount, and approvalId are required" });
     }
-    const entry = earnService.getVault(token);
+    const entry = await earnService.getVault(token);
     await requireOwnWallet(userKey, walletAddress, walletId);
 
     await consumeApproval({
@@ -154,7 +154,7 @@ router.post("/withdraw", requireCavoSession, requireMatchingUserKey, validateBod
       // the separate Withdraw feature is the CCTP path.
       throw Object.assign(new Error("Earn withdrawals always settle to your Arc balance. Use Withdraw to move funds cross-chain."), { status: 400 });
     }
-    const entry = earnService.getVault(token);
+    const entry = await earnService.getVault(token);
     await requireOwnWallet(userKey, walletAddress, walletId);
 
     await consumeApproval({
