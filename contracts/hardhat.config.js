@@ -22,6 +22,13 @@ module.exports = {
         ? [process.env.DEPLOYER_PRIVATE_KEY]
         : [],
     },
+    arc_mainnet: {
+      url: process.env.ARC_MAINNET_RPC_URL || "",
+      chainId: 5042,
+      accounts: process.env.DEPLOYER_PRIVATE_KEY
+        ? [process.env.DEPLOYER_PRIVATE_KEY]
+        : [],
+    },
     hardhat: {
       chainId: 5042002,
     },
