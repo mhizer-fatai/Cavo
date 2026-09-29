@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /**
@@ -10,7 +11,7 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
  * @notice Arc-native USDC/EURC payment link router
  * @dev Routes payments directly to creator, deducts platform fee
  */
-contract Cavo is Ownable, ReentrancyGuard {
+contract Cavo is Ownable, ReentrancyGuard, Pausable {
     // ─── Events ────────────────────────────────────────────────────────
     event PaymentMade(
         bytes32 indexed linkId,
@@ -24,6 +25,7 @@ contract Cavo is Ownable, ReentrancyGuard {
 
     event FeeUpdated(uint256 oldFeeBps, uint256 newFeeBps);
     event FeeWalletUpdated(address oldWallet, address newWallet);
+    event AllowedTokenUpdated(address indexed token, bool allowed);
 
     // ─── State ─────────────────────────────────────────────────────────
     /// @notice Fee in basis points (100 bps = 1%). Default: 50 bps = 0.5%
@@ -35,20 +37,28 @@ contract Cavo is Ownable, ReentrancyGuard {
     /// @notice Allowed tokens (USDC + EURC on Arc testnet)
     mapping(address => bool) public allowedTokens;
 
-    // ─── Arc Testnet Addresses ─────────────────────────────────────────
-    address public constant USDC = 0x3600000000000000000000000000000000000000;
-    address public constant EURC = 0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a;
-
     // ─── Constructor ───────────────────────────────────────────────────
-    constructor(address _feeWallet, uint256 _feeBps) Ownable(msg.sender) {
+    // Token addresses are constructor params (not constants) so testnet and
+    // mainnet deployments each allowlist the correct USDC/EURC contracts.
+    // Defaults for Arc Testnet:
+    //   USDC 0x3600000000000000000000000000000000000000
+    //   EURC 0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a
+    constructor(
+        address _feeWallet,
+        uint256 _feeBps,
+        address _usdc,
+        address _eurc
+    ) Ownable(msg.sender) {
         require(_feeWallet != address(0), "Invalid fee wallet");
         require(_feeBps <= 1000, "Fee too high (max 10%)");
+        require(_usdc != address(0) && _eurc != address(0), "Invalid token");
+        require(_usdc != _eurc, "Duplicate token");
 
         feeWallet = _feeWallet;
         feeBps = _feeBps;
 
-        allowedTokens[USDC] = true;
-        allowedTokens[EURC] = true;
+        allowedTokens[_usdc] = true;
+        allowedTokens[_eurc] = true;
     }
 
     // ─── Core Function ─────────────────────────────────────────────────
@@ -67,7 +77,7 @@ contract Cavo is Ownable, ReentrancyGuard {
         address token,
         uint256 amount,
         string calldata note
-    ) external nonReentrant {
+    ) external nonReentrant whenNotPaused {
         require(allowedTokens[token], "Token not allowed");
         require(recipient != address(0), "Invalid recipient");
         require(amount > 0, "Amount must be > 0");
@@ -113,7 +123,17 @@ contract Cavo is Ownable, ReentrancyGuard {
     }
 
     function setAllowedToken(address token, bool allowed) external onlyOwner {
+        require(token != address(0), "Invalid address");
         allowedTokens[token] = allowed;
+        emit AllowedTokenUpdated(token, allowed);
+    }
+
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    function unpause() external onlyOwner {
+        _unpause();
     }
 
     // ─── View Helpers ──────────────────────────────────────────────────

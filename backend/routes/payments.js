@@ -81,6 +81,59 @@ router.post("/", requireCavoSession, validateBody(schemas.paymentLog), async (re
       if (String(rpcData.result.from || "").toLowerCase() !== payerAddress.toLowerCase()) {
         return res.status(400).json({ error: "Transaction sender does not match the payer address" });
       }
+
+      // Bind the logged details to an on-chain ERC-20 Transfer event: the
+      // payer must have sent the claimed amount, and the recipient (when an
+      // EVM address is given) must receive funds in this transaction. This
+      // stops callers from logging real transactions with invented amounts.
+      if (amount || (recipientAddress && /^0x[a-fA-F0-9]{40}$/i.test(recipientAddress))) {
+        const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3e";
+        const logs = Array.isArray(rpcData.result.logs) ? rpcData.result.logs : [];
+        const transfers = logs.filter((log) =>
+          Array.isArray(log.topics) &&
+          String(log.topics[0] || "").toLowerCase() === TRANSFER_TOPIC &&
+          log.topics.length >= 3 &&
+          typeof log.data === "string"
+        );
+        const topicAddress = (topic) => {
+          const hex = String(topic || "").toLowerCase().replace(/^0x/, "");
+          if (!/^0{24}[0-9a-f]{40}$/.test(hex)) return null;
+          return `0x${hex.slice(24)}`;
+        };
+        if (amount) {
+          let expectedAtomic = null;
+          try {
+            expectedAtomic = BigInt(Math.round(Number(amount) * 1_000_000)).toString();
+          } catch {
+            expectedAtomic = null;
+          }
+          const sent = expectedAtomic !== null && transfers.some((log) => {
+            let value = null;
+            try {
+              value = BigInt(log.data).toString();
+            } catch {
+              return false;
+            }
+            return topicAddress(log.topics[1]) === payerAddress.toLowerCase() && value === expectedAtomic;
+          });
+          if (!sent) {
+            return res.status(400).json({ error: "No on-chain transfer matches the logged payer and amount" });
+          }
+        }
+        if (recipientAddress && /^0x[a-fA-F0-9]{40}$/i.test(recipientAddress)) {
+          const received = transfers.some((log) =>
+            topicAddress(log.topics[2]) === recipientAddress.toLowerCase()
+          );
+          if (!received) {
+            return res.status(400).json({ error: "No on-chain transfer matches the logged recipient" });
+          }
+        }
+      }
+
+      // The logged payer must actually be the transaction's sender.
+      if (String(rpcData.result.from || "").toLowerCase() !== payerAddress.toLowerCase()) {
+        return res.status(400).json({ error: "Transaction sender does not match the payer address" });
+      }
     } catch (rpcErr) {
       console.error("RPC verification error:", rpcErr.message);
       // If the RPC is down, reject the payment to be safe

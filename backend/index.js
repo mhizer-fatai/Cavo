@@ -202,7 +202,15 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: "Internal server error" });
 });
 
+if (!isProduction) {
+  console.warn(
+    "Running in DEVELOPMENT mode (NODE_ENV !== 'production'): relaxed rate limits, " +
+    "non-Secure cookies, verbose errors. Do NOT use for mainnet traffic."
+  );
+}
+
 app.listen(PORT, () => {
   console.log(`Cavo API running on http://localhost:${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/api/health`);
+  console.log(`CIRCLE_KIT_KEY: ${process.env.CIRCLE_KIT_KEY ? "SET" : "UNSET"}`);
 });

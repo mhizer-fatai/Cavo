@@ -44,6 +44,27 @@ router.post("/", requireCavoSession, validateBody(schemas.linkCreate), async (re
       }
     }
 
+    // Anti-spam: cap the number of active links per creator.
+    const MAX_ACTIVE_LINKS = Number(process.env.MAX_ACTIVE_LINKS || 50);
+    const nowIso = new Date().toISOString();
+    let activeLinkCount = 0;
+    if (supabase) {
+      const { count, error: countErr } = await supabase
+        .from("payment_links")
+        .select("id", { count: "exact", head: true })
+        .eq("creator_address", creatorAddress.toLowerCase())
+        .gt("expires_at", nowIso);
+      if (countErr) throw countErr;
+      activeLinkCount = count || 0;
+    } else {
+      activeLinkCount = Array.from(memStore.links.values()).filter(
+        (l) => l.creator_address === creatorAddress.toLowerCase() && l.expires_at > nowIso
+      ).length;
+    }
+    if (activeLinkCount >= MAX_ACTIVE_LINKS) {
+      return res.status(429).json({ error: `Too many active payment links (max ${MAX_ACTIVE_LINKS}). Wait for some to expire.` });
+    }
+
     const createdAt = new Date();
 
     const expiresAt = new Date(createdAt.getTime() + 30 * 60000); // 30 mins
