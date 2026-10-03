@@ -63,3 +63,7 @@ hackathon-submission.md
 backend/scripts/register-entity-secret.mjs
 backend/scripts/setup-entity-secret.mjs
 
+# Local session exports (large, never commit)
+new-session-*.json
+*-session-*.json
+
